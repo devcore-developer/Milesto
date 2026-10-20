@@ -1,26 +1,187 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* ---- Base surfaces ---- */
+    --background: 214 40% 98%;          /* soft blue-gray tint */
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* ---- Primary: soft blue ---- */
+    --primary: 221 70% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 215 32% 96%;
+    --secondary-foreground: 222 47% 18%;
+
+    --muted: 215 30% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 214 32% 92%;
+    --accent-foreground: 222 47% 18%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 28% 90%;
+    --input: 215 28% 88%;
+    --ring: 221 70% 55%;
+
+    /* ---- Sidebar: deep navy ---- */
+    --sidebar: 217 52% 11%;
+    --sidebar-foreground: 215 30% 88%;
+    --sidebar-muted: 215 18% 58%;
+    --sidebar-border: 215 38% 18%;
+    --sidebar-accent: 217 50% 15%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-primary: 221 74% 60%;
+
+    /* ---- Semantic status ---- */
+    --success: 152 62% 38%;
+    --success-soft: 152 60% 95%;
+    --success-foreground: 152 60% 22%;
+
+    --warning: 36 92% 47%;
+    --warning-soft: 36 90% 95%;
+    --warning-foreground: 32 80% 28%;
+
+    --info: 199 89% 45%;
+    --info-soft: 199 80% 95%;
+    --info-foreground: 200 70% 30%;
+
+    --danger: 0 72% 51%;
+    --danger-soft: 0 70% 96%;
+    --danger-foreground: 0 70% 32%;
+
+    /* ---- Chart palette ---- */
+    --chart-1: 221 74% 57%;   /* soft blue (primary) */
+    --chart-2: 174 68% 42%;   /* muted teal */
+    --chart-3: 152 62% 42%;   /* green */
+    --chart-4: 36 90% 52%;    /* amber */
+    --chart-5: 265 60% 64%;   /* violet */
+    --chart-6: 0 70% 60%;     /* red */
+
+    /* ---- Radii ---- */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 20px;
+
+    /* ---- Shadows ---- */
+    --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+    --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.05);
+    --shadow-md: 0 6px 16px -4px rgb(15 23 42 / 0.08), 0 2px 6px -2px rgb(15 23 42 / 0.05);
+    --shadow-lg: 0 16px 40px -10px rgb(15 23 42 / 0.14), 0 6px 12px -6px rgb(15 23 42 / 0.06);
+
+    --sidebar-shadow: 0 0 0 1px rgb(15 23 42 / 0.04);
+  }
+
+  .dark {
+    /* Reserved for Phase 2+ — structure-only placeholders */
+    --background: 222 38% 10%;
+    --foreground: 215 30% 92%;
+    /* (remaining tokens intentionally not defined yet) */
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "cv11", "ss01", "ss03";
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Subtle, refined scrollbars */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(215 18% 80%);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(215 18% 70%);
+    background-clip: content-box;
+  }
+  .sidebar-scroll::-webkit-scrollbar-thumb {
+    background: hsl(215 20% 30%);
+    background-clip: content-box;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* Card primitives */
+  .card-surface {
+    @apply rounded-lg border border-border bg-card shadow-xs;
+  }
+
+  /* Sidebar nav link base */
+  .nav-link {
+    @apply relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150;
+  }
+
+  /* Focus ring utility used across interactive elements */
+  .focus-ring {
+    @apply outline-none ring-offset-2 ring-offset-background focus-visible:ring-2 focus-visible:ring-ring;
+  }
+
+  /* Subtle top hairline used on cards in showcases */
+  .hairline-top {
+    @apply relative;
+  }
+  .hairline-top::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, hsl(var(--border)), transparent);
+    pointer-events: none;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+  /* Recharts polish */
+  .recharts-cartesian-axis-tick text {
+    fill: hsl(var(--muted-foreground));
+    font-size: 11px;
+  }
+  .recharts-cartesian-grid line {
+    stroke: hsl(var(--border));
+    stroke-dasharray: 3 3;
+    opacity: 0.6;
+  }
+  .recharts-tooltip-wrapper {
+    outline: none !important;
+  }
+  .recharts-surface {
+    overflow: visible;
+  }
 }
