@@ -1,6 +1,10 @@
-// src/app/(app)/timeline/page.tsx
-import { PlaceholderPage } from "@/components/common/placeholder-page";
-export const metadata = { title: "Timeline" };
+import type { Metadata } from "next";
+import TimelineWorkspace from "@/components/timeline/TimelineWorkspace";
+
+export const metadata: Metadata = {
+  title: "الجدول الزمني والمخرجات — Milesto",
+};
+
 export default function TimelinePage() {
-  return <PlaceholderPage title="Timeline" description="Cross-project timeline of milestones, deadlines, and deliverables." badge="Planned for Phase 2" />;
+  return <TimelineWorkspace />;
 }
