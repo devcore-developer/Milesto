@@ -1,6 +1,527 @@
-// src/app/(app)/reports/page.tsx
-import { PlaceholderPage } from "@/components/common/placeholder-page";
-export const metadata = { title: "Reports & Analytics" };
+"use client";
+
+import { useState } from "react";
+
+import { FinanceProvider, useFinance } from "@/lib/finance-context";
+import { NotesProvider } from "@/lib/notes-context";
+import { TimelineProvider, useTimeline } from "@/providers/TimelineProvider";
+import { useProjects } from "@/lib/project-context";
+
+type Project = ReturnType<typeof useProjects>["projects"][number];
+type Milestone = ReturnType<typeof useTimeline>["milestones"][number];
+type MilestoneStatus = Milestone["status"];
+type FinanceObligation = ReturnType<typeof useFinance>["obligations"][number];
+type FinanceTransaction = ReturnType<typeof useFinance>["transactions"][number];
+
+type TabKey = "overview" | "delivery" | "finance";
+
+type ProjectRow = {
+  id: string;
+  name: string;
+  milestonesTotal: number;
+  planned: number;
+  inProgress: number;
+  done: number;
+  overdue: number;
+  obligationCount: number;
+  cancelledCount: number;
+  totalDueMinor: number;
+  totalPaidMinor: number;
+  remainingMinor: number;
+};
+
+const TABS: ReadonlyArray<{ key: TabKey; label: string }> = [
+  { key: "overview", label: "نظرة عامة" },
+  { key: "delivery", label: "الإنجاز والتسليم" },
+  { key: "finance", label: "التقارير المالية" },
+];
+
+function localToday(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+function statusLabel(status: MilestoneStatus): string {
+  if (status === "done") return "مكتملة";
+  if (status === "in-progress") return "قيد التنفيذ";
+  return "مخططة";
+}
+
+function statusChipClass(status: MilestoneStatus): string {
+  if (status === "done") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "in-progress") return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-slate-200 bg-slate-100 text-slate-600";
+}
+
+function formatInt(value: number): string {
+  return new Intl.NumberFormat("ar-EG", { maximumFractionDigits: 0 }).format(value);
+}
+
+function formatAmount(minor: number): string {
+  return new Intl.NumberFormat("ar-EG", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(minor / 100);
+}
+
+function formatArabicDate(value: string): string {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("ar-EG", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(parsed);
+}
+
+function percentOf(part: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.round((part / total) * 100);
+}
+
+function isOverdue(milestone: Milestone, today: string): boolean {
+  if (milestone.status === "done") return false;
+  return (
+    typeof milestone.dueDate === "string" &&
+    milestone.dueDate !== "" &&
+    milestone.dueDate < today
+  );
+}
+
+function paidMinorFor(
+  obligationId: string,
+  transactions: ReadonlyArray<FinanceTransaction>,
+): number {
+  let paid = 0;
+  for (const tx of transactions) {
+    if (tx.obligationId === obligationId && !tx.voidedAt) {
+      paid += tx.amountMinor;
+    }
+  }
+  return paid;
+}
+
+function projectDisplayName(project: Project): string {
+  const candidate = project as unknown as { name?: unknown; title?: unknown };
+  if (typeof candidate.name === "string" && candidate.name.trim().length > 0) {
+    return candidate.name;
+  }
+  if (typeof candidate.title === "string" && candidate.title.trim().length > 0) {
+    return candidate.title;
+  }
+  return "مشروع بدون اسم";
+}
+
+function projectNameFor(projectId: string, projects: ReadonlyArray<Project>): string {
+  const project = projects.find((item) => item.id === projectId);
+  return project ? projectDisplayName(project) : "مشروع غير معروف";
+}
+
+function buildProjectRows(
+  projects: ReadonlyArray<Project>,
+  milestones: ReadonlyArray<Milestone>,
+  obligations: ReadonlyArray<FinanceObligation>,
+  transactions: ReadonlyArray<FinanceTransaction>,
+  today: string,
+): ProjectRow[] {
+  return projects.map((project) => {
+    const projectMilestones = milestones.filter((item) => item.projectId === project.id);
+    const done = projectMilestones.filter((item) => item.status === "done").length;
+    const inProgress = projectMilestones.filter((item) => item.status === "in-progress").length;
+    const planned = projectMilestones.filter((item) => item.status === "planned").length;
+    const overdue = projectMilestones.filter((item) => isOverdue(item, today)).length;
+
+    const projectObligations = obligations.filter(
+      (item) => item.projectId === project.id && !item.cancelledAt,
+    );
+    const cancelledCount = obligations.filter(
+      (item) => item.projectId === project.id && Boolean(item.cancelledAt),
+    ).length;
+
+    let totalDueMinor = 0;
+    let totalPaidMinor = 0;
+    for (const obligation of projectObligations) {
+      totalDueMinor += obligation.amountMinor;
+      totalPaidMinor += paidMinorFor(obligation.id, transactions);
+    }
+
+    return {
+      id: project.id,
+      name: projectDisplayName(project),
+      milestonesTotal: projectMilestones.length,
+      planned,
+      inProgress,
+      done,
+      overdue,
+      obligationCount: projectObligations.length,
+      cancelledCount,
+      totalDueMinor,
+      totalPaidMinor,
+      remainingMinor: Math.max(totalDueMinor - totalPaidMinor, 0),
+    };
+  });
+}
+
+function StatCard({
+  label,
+  value,
+  hint,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: "default" | "positive" | "warning" | "danger";
+}) {
+  const valueClass =
+    tone === "positive"
+      ? "text-emerald-600"
+      : tone === "warning"
+        ? "text-amber-600"
+        : tone === "danger"
+          ? "text-rose-600"
+          : "text-slate-900";
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <p className={`mt-2 text-2xl font-semibold ${valueClass}`}>{value}</p>
+      {hint ? <p className="mt-1 text-xs text-slate-400">{hint}</p> : null}
+    </div>
+  );
+}
+
+function ProgressBar({
+  value,
+  tone = "emerald",
+}: {
+  value: number;
+  tone?: "emerald" | "sky";
+}) {
+  const clamped = Math.min(Math.max(value, 0), 100);
+  const barClass = tone === "sky" ? "bg-sky-500" : "bg-emerald-500";
+
+  return (
+    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+      <div className={`h-full rounded-full ${barClass}`} style={{ width: `${clamped}%` }} />
+    </div>
+  );
+}
+
+function ReportsDashboard() {
+  const { projects } = useProjects();
+  const { obligations, transactions } = useFinance();
+  const { milestones, hydrated } = useTimeline();
+  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+
+  if (!hydrated) {
+    return (
+      <div dir="rtl" className="mx-auto w-full max-w-6xl px-4 py-10">
+        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 shadow-sm">
+          جارٍ تحميل بيانات التقارير…
+        </div>
+      </div>
+    );
+  }
+
+  const today = localToday();
+  const rows = buildProjectRows(projects, milestones, obligations, transactions, today);
+
+  const doneTotal = milestones.filter((item) => item.status === "done").length;
+  const inProgressTotal = milestones.filter((item) => item.status === "in-progress").length;
+  const overdueTotal = milestones.filter((item) => isOverdue(item, today)).length;
+  const activeObligations = obligations.filter((item) => !item.cancelledAt).length;
+  const cancelledObligations = obligations.filter((item) => Boolean(item.cancelledAt)).length;
+  const totalDueMinor = rows.reduce((sum, row) => sum + row.totalDueMinor, 0);
+  const totalPaidMinor = rows.reduce((sum, row) => sum + row.totalPaidMinor, 0);
+  const remainingMinor = Math.max(totalDueMinor - totalPaidMinor, 0);
+
+  const upcoming = milestones
+    .filter(
+      (item) =>
+        item.status !== "done" &&
+        typeof item.dueDate === "string" &&
+        item.dueDate !== "",
+    )
+    .sort((a, b) => {
+      const aDue = typeof a.dueDate === "string" ? a.dueDate : "";
+      const bDue = typeof b.dueDate === "string" ? b.dueDate : "";
+      if (aDue < bDue) return -1;
+      if (aDue > bDue) return 1;
+      return 0;
+    })
+    .slice(0, 6);
+
+  return (
+    <div dir="rtl" className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
+      <header className="space-y-1">
+        <h1 className="text-2xl font-bold text-slate-900">التقارير والتحليلات</h1>
+        <p className="text-sm text-slate-500">
+          تحليلات عبر المشاريع: الإنجاز والتسليم والحالة المالية — محدثة حتى {formatArabicDate(today)}.
+        </p>
+      </header>
+
+      <div className="flex flex-wrap gap-2">
+        {TABS.map((tab) => {
+          const active = tab.key === activeTab;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={
+                active
+                  ? "rounded-full border border-slate-900 bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm"
+                  : "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+              }
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === "overview" ? (
+        <section className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <StatCard
+              label="المشاريع"
+              value={formatInt(projects.length)}
+              hint="إجمالي المشاريع المسجلة"
+            />
+            <StatCard
+              label="إجمالي الميلستونات"
+              value={formatInt(milestones.length)}
+              hint="عبر جميع المشاريع"
+            />
+            <StatCard
+              label="معدل الإنجاز"
+              value={`${percentOf(doneTotal, milestones.length)}%`}
+              tone="positive"
+              hint="الميلستونات المكتملة من الإجمالي"
+            />
+            <StatCard label="قيد التنفيذ" value={formatInt(inProgressTotal)} tone="warning" />
+            <StatCard
+              label="متأخرة عن الجدول"
+              value={formatInt(overdueTotal)}
+              tone={overdueTotal > 0 ? "danger" : "default"}
+              hint="مقارنة بتاريخ اليوم"
+            />
+            <StatCard
+              label="التزامات مالية نشطة"
+              value={formatInt(activeObligations)}
+              hint={
+                cancelledObligations > 0
+                  ? `${formatInt(cancelledObligations)} التزام ملغي مستثنى من الحسابات`
+                  : "غير شاملة الالتزامات الملغاة"
+              }
+            />
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-base font-semibold text-slate-900">تقدم المشاريع</h3>
+            <div className="mt-4 space-y-4">
+              {rows.map((row) => (
+                <div key={row.id} className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                    <span className="font-medium text-slate-800">{row.name}</span>
+                    <span className="text-slate-500">
+                      {formatInt(row.done)} / {formatInt(row.milestonesTotal)} مكتملة
+                      {row.overdue > 0 ? ` · ${formatInt(row.overdue)} متأخرة` : ""}
+                    </span>
+                  </div>
+                  <ProgressBar value={percentOf(row.done, row.milestonesTotal)} />
+                </div>
+              ))}
+              {rows.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  لا توجد مشاريع بعد — أضف مشروعًا من صفحة المشاريع لتظهر التقارير هنا.
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === "delivery" ? (
+        <section className="space-y-6">
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <table className="w-full text-right text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">المشروع</th>
+                  <th className="px-4 py-3 font-medium">مخططة</th>
+                  <th className="px-4 py-3 font-medium">قيد التنفيذ</th>
+                  <th className="px-4 py-3 font-medium">مكتملة</th>
+                  <th className="px-4 py-3 font-medium">متأخرة</th>
+                  <th className="px-4 py-3 font-medium">نسبة الإنجاز</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((row) => (
+                  <tr key={row.id} className="text-slate-700">
+                    <td className="px-4 py-3 font-medium text-slate-900">{row.name}</td>
+                    <td className="px-4 py-3">{formatInt(row.planned)}</td>
+                    <td className="px-4 py-3">{formatInt(row.inProgress)}</td>
+                    <td className="px-4 py-3">{formatInt(row.done)}</td>
+                    <td
+                      className={
+                        row.overdue > 0
+                          ? "px-4 py-3 font-semibold text-rose-600"
+                          : "px-4 py-3"
+                      }
+                    >
+                      {formatInt(row.overdue)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <ProgressBar value={percentOf(row.done, row.milestonesTotal)} />
+                        <span className="shrink-0 text-xs text-slate-500">
+                          {percentOf(row.done, row.milestonesTotal)}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
+                      لا توجد بيانات بعد.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-base font-semibold text-slate-900">أقرب الميلستونات المستحقة</h3>
+            <ul className="mt-4 space-y-3">
+              {upcoming.map((milestone) => {
+                const dueLabel =
+                  typeof milestone.dueDate === "string" && milestone.dueDate !== ""
+                    ? formatArabicDate(milestone.dueDate)
+                    : "بدون تاريخ";
+                const overdueFlag = isOverdue(milestone, today);
+                return (
+                  <li
+                    key={milestone.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3"
+                  >
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-slate-900">{milestone.title}</p>
+                      <p className="text-xs text-slate-500">
+                        {projectNameFor(milestone.projectId, projects)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`rounded-full border px-3 py-1 text-xs font-medium ${statusChipClass(milestone.status)}`}
+                      >
+                        {statusLabel(milestone.status)}
+                      </span>
+                      <span
+                        className={
+                          overdueFlag
+                            ? "text-xs font-semibold text-rose-600"
+                            : "text-xs text-slate-500"
+                        }
+                      >
+                        {dueLabel}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+              {upcoming.length === 0 ? (
+                <li className="text-sm text-slate-500">
+                  لا توجد ميلستونات مفتوحة بتواريخ استحقاق.
+                </li>
+              ) : null}
+            </ul>
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === "finance" ? (
+        <section className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <StatCard label="إجمالي المستحق" value={formatAmount(totalDueMinor)} />
+            <StatCard label="إجمالي المدفوع" value={formatAmount(totalPaidMinor)} tone="positive" />
+            <StatCard
+              label="المتبقي"
+              value={formatAmount(remainingMinor)}
+              tone={remainingMinor > 0 ? "warning" : "positive"}
+            />
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <table className="w-full text-right text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">المشروع</th>
+                  <th className="px-4 py-3 font-medium">التزامات نشطة</th>
+                  <th className="px-4 py-3 font-medium">ملغاة</th>
+                  <th className="px-4 py-3 font-medium">إجمالي المستحق</th>
+                  <th className="px-4 py-3 font-medium">المدفوع</th>
+                  <th className="px-4 py-3 font-medium">المتبقي</th>
+                  <th className="px-4 py-3 font-medium">نسبة السداد</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((row) => (
+                  <tr key={row.id} className="text-slate-700">
+                    <td className="px-4 py-3 font-medium text-slate-900">{row.name}</td>
+                    <td className="px-4 py-3">{formatInt(row.obligationCount)}</td>
+                    <td className="px-4 py-3">{formatInt(row.cancelledCount)}</td>
+                    <td className="px-4 py-3">{formatAmount(row.totalDueMinor)}</td>
+                    <td className="px-4 py-3">{formatAmount(row.totalPaidMinor)}</td>
+                    <td className="px-4 py-3">{formatAmount(row.remainingMinor)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <ProgressBar
+                          tone="sky"
+                          value={percentOf(row.totalPaidMinor, row.totalDueMinor)}
+                        />
+                        <span className="shrink-0 text-xs text-slate-500">
+                          {percentOf(row.totalPaidMinor, row.totalDueMinor)}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+                      لا توجد بيانات مالية بعد.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="text-xs text-slate-400">
+            المبالغ معروضة بوحدات العملة الأساسية لكل مشروع دون تحويل بين العملات، والالتزامات
+            الملغاة والمدفوعات المستبعدة (Voided) غير محتسبة.
+          </p>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 export default function ReportsPage() {
-  return <PlaceholderPage title="Reports & Analytics" description="Cross-project analytics, throughput, delivery, and financial reports." badge="Planned for Phase 2" />;
+  return (
+    <FinanceProvider>
+      <NotesProvider>
+        <TimelineProvider>
+          <ReportsDashboard />
+        </TimelineProvider>
+      </NotesProvider>
+    </FinanceProvider>
+  );
 }
