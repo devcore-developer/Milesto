@@ -3,7 +3,6 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { DecisionStatus, KnowledgeNote, NoteLinks, NoteSeed } from "@/types/notes";
-import { initialNotes } from "@/data/notes-data";
 
 const DEFAULT_AUTHOR = "Mara Vey";
 
@@ -47,7 +46,7 @@ export interface NotesContextValue {
 const NotesContext = createContext<NotesContextValue | null>(null);
 
 export function NotesProvider({ children }: { children: ReactNode }) {
-  const [notes, setNotes] = useState<KnowledgeNote[]>(initialNotes);
+  const [notes, setNotes] = useState<KnowledgeNote[]>([]);
 
   const createNote = useCallback(
     (seed: NoteSeed): KnowledgeNote => {

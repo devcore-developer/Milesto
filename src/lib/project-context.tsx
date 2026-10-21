@@ -2,14 +2,6 @@
 
 import { createContext, useContext, useState, type ReactNode } from "react";
 
-import { projects as initialProjects } from "@/data/projects";
-import { phases as initialPhases, tasks as initialTasks } from "@/data/execution-data";
-import {
-  initialBugs,
-  initialExecutions,
-  initialGates,
-  initialTestCases,
-} from "@/data/testing-data";
 import { calculateProjectProgress } from "@/lib/progress-engine";
 
 import type {
@@ -111,13 +103,13 @@ export interface ProjectContextValue {
 const ProjectContext = createContext<ProjectContextValue | null>(null);
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
-  const [projects, setProjects] = useState<Project[]>(initialProjects);
-  const [phases, setPhases] = useState<Phase[]>(initialPhases);
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
-  const [testCases, setTestCases] = useState<TestCase[]>(initialTestCases);
-  const [executions, setExecutions] = useState<TestExecution[]>(initialExecutions);
-  const [bugs, setBugs] = useState<Bug[]>(initialBugs);
-  const [gates, setGates] = useState<QualityGate[]>(initialGates);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [phases, setPhases] = useState<Phase[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [testCases, setTestCases] = useState<TestCase[]>([]);
+  const [executions, setExecutions] = useState<TestExecution[]>([]);
+  const [bugs, setBugs] = useState<Bug[]>([]);
+  const [gates, setGates] = useState<QualityGate[]>([]);
 
   // ---------- Projects / Phases / Tasks ----------
 

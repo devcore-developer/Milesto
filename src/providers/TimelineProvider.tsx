@@ -17,11 +17,6 @@ import * as React from "react";
 import { useProjects } from "@/lib/project-context";
 import { useFinance } from "@/lib/finance-context";
 import {
-  seedCustomEvents,
-  seedDeliverables,
-  seedMilestones,
-} from "@/data/timeline-data";
-import {
   buildTimelineEvents,
   canTransitionDeliverable,
   canTransitionMilestone,
@@ -116,14 +111,6 @@ function clearTimelineStorage(): void {
   }
 }
 
-function cloneSeed(): StoredTimelineState {
-  return {
-    milestones: seedMilestones.map((m) => ({ ...m, dependencies: m.dependencies ? [...m.dependencies] : undefined })),
-    deliverables: seedDeliverables.map((d) => ({ ...d, dependencies: d.dependencies ? [...d.dependencies] : undefined })),
-    customEvents: seedCustomEvents.map((e) => ({ ...e })),
-  };
-}
-
 /** Ids of derived events ("evt:...") — mutations must reject them. */
 function isDerivedEventId(id: string): boolean {
   return id.startsWith("evt:");
@@ -155,7 +142,7 @@ export interface TimelineContextValue {
   updateEvent: (id: string, data: unknown) => MutationResult;
   deleteEvent: (id: string) => MutationResult;
 
-  /** Restores the demonstration dataset and clears persisted timeline state. */
+  /** Clears all persisted timeline data and resets to an empty state. */
   resetTimelineData: () => void;
 }
 
@@ -164,11 +151,10 @@ const TimelineContext = React.createContext<TimelineContextValue | undefined>(un
 export function TimelineProvider({ children }: { children: React.ReactNode }) {
   const { projects } = useProjects();
   const { obligations } = useFinance();
-  const seed = React.useRef<StoredTimelineState>(cloneSeed());
 
-  const [milestones, setMilestones] = React.useState<Milestone[]>(() => seed.current.milestones);
-  const [deliverables, setDeliverables] = React.useState<TimelineDeliverable[]>(() => seed.current.deliverables);
-  const [customEvents, setCustomEvents] = React.useState<TimelineEvent[]>(() => seed.current.customEvents);
+  const [milestones, setMilestones] = React.useState<Milestone[]>([]);
+  const [deliverables, setDeliverables] = React.useState<TimelineDeliverable[]>([]);
+  const [customEvents, setCustomEvents] = React.useState<TimelineEvent[]>([]);
   const [persistenceError, setPersistenceError] = React.useState<string | null>(null);
   const [hydrated, setHydrated] = React.useState(false);
   const hydratedRef = React.useRef(false);
@@ -465,10 +451,9 @@ export function TimelineProvider({ children }: { children: React.ReactNode }) {
 
   const resetTimelineData = React.useCallback(() => {
     clearTimelineStorage();
-    const fresh = cloneSeed();
-    setMilestones(fresh.milestones);
-    setDeliverables(fresh.deliverables);
-    setCustomEvents(fresh.customEvents);
+    setMilestones([]);
+    setDeliverables([]);
+    setCustomEvents([]);
     setPersistenceError(null);
   }, []);
 

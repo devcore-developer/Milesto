@@ -31,9 +31,9 @@ type ProjectRow = {
 };
 
 const TABS: ReadonlyArray<{ key: TabKey; label: string }> = [
-  { key: "overview", label: "نظرة عامة" },
-  { key: "delivery", label: "الإنجاز والتسليم" },
-  { key: "finance", label: "التقارير المالية" },
+  { key: "overview", label: "Overview" },
+  { key: "delivery", label: "Delivery & Progress" },
+  { key: "finance", label: "Financial" },
 ];
 
 function localToday(): string {
@@ -44,9 +44,9 @@ function localToday(): string {
 }
 
 function statusLabel(status: MilestoneStatus): string {
-  if (status === "done") return "مكتملة";
-  if (status === "in-progress") return "قيد التنفيذ";
-  return "مخططة";
+  if (status === "done") return "Done";
+  if (status === "in-progress") return "In progress";
+  return "Planned";
 }
 
 function statusChipClass(status: MilestoneStatus): string {
@@ -56,21 +56,21 @@ function statusChipClass(status: MilestoneStatus): string {
 }
 
 function formatInt(value: number): string {
-  return new Intl.NumberFormat("ar-EG", { maximumFractionDigits: 0 }).format(value);
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
 }
 
 function formatAmount(minor: number): string {
-  return new Intl.NumberFormat("ar-EG", {
+  return new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(minor / 100);
 }
 
-function formatArabicDate(value: string): string {
+function formatDate(value: string): string {
   if (!value) return "—";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat("ar-EG", {
+  return new Intl.DateTimeFormat("en-US", {
     day: "numeric",
     month: "long",
     year: "numeric",
@@ -112,12 +112,12 @@ function projectDisplayName(project: Project): string {
   if (typeof candidate.title === "string" && candidate.title.trim().length > 0) {
     return candidate.title;
   }
-  return "مشروع بدون اسم";
+  return "Unnamed project";
 }
 
 function projectNameFor(projectId: string, projects: ReadonlyArray<Project>): string {
   const project = projects.find((item) => item.id === projectId);
-  return project ? projectDisplayName(project) : "مشروع غير معروف";
+  return project ? projectDisplayName(project) : "Unknown project";
 }
 
 function buildProjectRows(
@@ -219,9 +219,9 @@ function ReportsDashboard() {
 
   if (!hydrated) {
     return (
-      <div dir="rtl" className="mx-auto w-full max-w-6xl px-4 py-10">
+      <div className="mx-auto w-full max-w-6xl px-4 py-10">
         <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 shadow-sm">
-          جارٍ تحميل بيانات التقارير…
+          Loading reports data…
         </div>
       </div>
     );
@@ -256,11 +256,12 @@ function ReportsDashboard() {
     .slice(0, 6);
 
   return (
-    <div dir="rtl" className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold text-slate-900">التقارير والتحليلات</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Reports &amp; Analytics</h1>
         <p className="text-sm text-slate-500">
-          تحليلات عبر المشاريع: الإنجاز والتسليم والحالة المالية — محدثة حتى {formatArabicDate(today)}.
+          Cross-project analytics for delivery, progress, and financial health — updated as of{" "}
+          {formatDate(today)}.
         </p>
       </header>
 
@@ -288,49 +289,49 @@ function ReportsDashboard() {
         <section className="space-y-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <StatCard
-              label="المشاريع"
+              label="Projects"
               value={formatInt(projects.length)}
-              hint="إجمالي المشاريع المسجلة"
+              hint="Total projects tracked"
             />
             <StatCard
-              label="إجمالي الميلستونات"
+              label="Total milestones"
               value={formatInt(milestones.length)}
-              hint="عبر جميع المشاريع"
+              hint="Across all projects"
             />
             <StatCard
-              label="معدل الإنجاز"
+              label="Completion rate"
               value={`${percentOf(doneTotal, milestones.length)}%`}
               tone="positive"
-              hint="الميلستونات المكتملة من الإجمالي"
+              hint="Completed milestones vs. total"
             />
-            <StatCard label="قيد التنفيذ" value={formatInt(inProgressTotal)} tone="warning" />
+            <StatCard label="In progress" value={formatInt(inProgressTotal)} tone="warning" />
             <StatCard
-              label="متأخرة عن الجدول"
+              label="Overdue"
               value={formatInt(overdueTotal)}
               tone={overdueTotal > 0 ? "danger" : "default"}
-              hint="مقارنة بتاريخ اليوم"
+              hint="Compared to today"
             />
             <StatCard
-              label="التزامات مالية نشطة"
+              label="Active obligations"
               value={formatInt(activeObligations)}
               hint={
                 cancelledObligations > 0
-                  ? `${formatInt(cancelledObligations)} التزام ملغي مستثنى من الحسابات`
-                  : "غير شاملة الالتزامات الملغاة"
+                  ? `${formatInt(cancelledObligations)} cancelled obligation(s) excluded`
+                  : "Cancelled obligations excluded"
               }
             />
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="text-base font-semibold text-slate-900">تقدم المشاريع</h3>
+            <h3 className="text-base font-semibold text-slate-900">Project progress</h3>
             <div className="mt-4 space-y-4">
               {rows.map((row) => (
                 <div key={row.id} className="space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
                     <span className="font-medium text-slate-800">{row.name}</span>
                     <span className="text-slate-500">
-                      {formatInt(row.done)} / {formatInt(row.milestonesTotal)} مكتملة
-                      {row.overdue > 0 ? ` · ${formatInt(row.overdue)} متأخرة` : ""}
+                      {formatInt(row.done)} / {formatInt(row.milestonesTotal)} done
+                      {row.overdue > 0 ? ` · ${formatInt(row.overdue)} overdue` : ""}
                     </span>
                   </div>
                   <ProgressBar value={percentOf(row.done, row.milestonesTotal)} />
@@ -338,7 +339,8 @@ function ReportsDashboard() {
               ))}
               {rows.length === 0 ? (
                 <p className="text-sm text-slate-500">
-                  لا توجد مشاريع بعد — أضف مشروعًا من صفحة المشاريع لتظهر التقارير هنا.
+                  No projects yet — add a project from the Projects page and reports will show up
+                  here.
                 </p>
               ) : null}
             </div>
@@ -349,15 +351,15 @@ function ReportsDashboard() {
       {activeTab === "delivery" ? (
         <section className="space-y-6">
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <table className="w-full text-right text-sm">
+            <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs text-slate-500">
                 <tr>
-                  <th className="px-4 py-3 font-medium">المشروع</th>
-                  <th className="px-4 py-3 font-medium">مخططة</th>
-                  <th className="px-4 py-3 font-medium">قيد التنفيذ</th>
-                  <th className="px-4 py-3 font-medium">مكتملة</th>
-                  <th className="px-4 py-3 font-medium">متأخرة</th>
-                  <th className="px-4 py-3 font-medium">نسبة الإنجاز</th>
+                  <th className="px-4 py-3 font-medium">Project</th>
+                  <th className="px-4 py-3 font-medium">Planned</th>
+                  <th className="px-4 py-3 font-medium">In progress</th>
+                  <th className="px-4 py-3 font-medium">Done</th>
+                  <th className="px-4 py-3 font-medium">Overdue</th>
+                  <th className="px-4 py-3 font-medium">Completion</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -389,7 +391,7 @@ function ReportsDashboard() {
                 {rows.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
-                      لا توجد بيانات بعد.
+                      No data yet.
                     </td>
                   </tr>
                 ) : null}
@@ -398,13 +400,13 @@ function ReportsDashboard() {
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="text-base font-semibold text-slate-900">أقرب الميلستونات المستحقة</h3>
+            <h3 className="text-base font-semibold text-slate-900">Upcoming milestone due dates</h3>
             <ul className="mt-4 space-y-3">
               {upcoming.map((milestone) => {
                 const dueLabel =
                   typeof milestone.dueDate === "string" && milestone.dueDate !== ""
-                    ? formatArabicDate(milestone.dueDate)
-                    : "بدون تاريخ";
+                    ? formatDate(milestone.dueDate)
+                    : "No due date";
                 const overdueFlag = isOverdue(milestone, today);
                 return (
                   <li
@@ -438,7 +440,7 @@ function ReportsDashboard() {
               })}
               {upcoming.length === 0 ? (
                 <li className="text-sm text-slate-500">
-                  لا توجد ميلستونات مفتوحة بتواريخ استحقاق.
+                  No open milestones with due dates.
                 </li>
               ) : null}
             </ul>
@@ -449,26 +451,26 @@ function ReportsDashboard() {
       {activeTab === "finance" ? (
         <section className="space-y-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <StatCard label="إجمالي المستحق" value={formatAmount(totalDueMinor)} />
-            <StatCard label="إجمالي المدفوع" value={formatAmount(totalPaidMinor)} tone="positive" />
+            <StatCard label="Total due" value={formatAmount(totalDueMinor)} />
+            <StatCard label="Total paid" value={formatAmount(totalPaidMinor)} tone="positive" />
             <StatCard
-              label="المتبقي"
+              label="Remaining"
               value={formatAmount(remainingMinor)}
               tone={remainingMinor > 0 ? "warning" : "positive"}
             />
           </div>
 
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <table className="w-full text-right text-sm">
+            <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs text-slate-500">
                 <tr>
-                  <th className="px-4 py-3 font-medium">المشروع</th>
-                  <th className="px-4 py-3 font-medium">التزامات نشطة</th>
-                  <th className="px-4 py-3 font-medium">ملغاة</th>
-                  <th className="px-4 py-3 font-medium">إجمالي المستحق</th>
-                  <th className="px-4 py-3 font-medium">المدفوع</th>
-                  <th className="px-4 py-3 font-medium">المتبقي</th>
-                  <th className="px-4 py-3 font-medium">نسبة السداد</th>
+                  <th className="px-4 py-3 font-medium">Project</th>
+                  <th className="px-4 py-3 font-medium">Active obligations</th>
+                  <th className="px-4 py-3 font-medium">Cancelled</th>
+                  <th className="px-4 py-3 font-medium">Total due</th>
+                  <th className="px-4 py-3 font-medium">Paid</th>
+                  <th className="px-4 py-3 font-medium">Remaining</th>
+                  <th className="px-4 py-3 font-medium">Payment progress</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -496,7 +498,7 @@ function ReportsDashboard() {
                 {rows.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
-                      لا توجد بيانات مالية بعد.
+                      No financial data yet.
                     </td>
                   </tr>
                 ) : null}
@@ -505,8 +507,8 @@ function ReportsDashboard() {
           </div>
 
           <p className="text-xs text-slate-400">
-            المبالغ معروضة بوحدات العملة الأساسية لكل مشروع دون تحويل بين العملات، والالتزامات
-            الملغاة والمدفوعات المستبعدة (Voided) غير محتسبة.
+            Amounts are shown in each project&apos;s base currency without cross-currency
+            conversion. Cancelled obligations and voided payments are excluded from the totals.
           </p>
         </section>
       ) : null}

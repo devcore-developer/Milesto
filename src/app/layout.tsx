@@ -4,6 +4,7 @@ import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NotesProvider } from "@/lib/notes-context";
 import { FinanceProvider } from "@/lib/finance-context";
+
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-sans",
@@ -19,16 +20,12 @@ export const metadata: Metadata = {
     "Milesto is a premium project execution and analytics workspace for managing projects, milestones, tasks, testing, notes, deadlines, and project finances.",
   applicationName: "Milesto",
   authors: [{ name: "Milesto" }],
-  icons: { icon: "/favicon.ico" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body className="font-sans antialiased">
-        <NotesProvider>
-          <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
-        </NotesProvider>
         <FinanceProvider>
           <NotesProvider>
             <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
