@@ -3,20 +3,25 @@
 /**
  * Milesto — Timeline page (Phase 10 fix)
  *
- * TimelineProvider is mounted per-page (same pattern as ReportsProvider on
- * the reports page and the Knowledge Center): the (app) layout supplies
- * ProjectProvider + FinanceProvider, and TimelineProvider sits underneath
- * them here so useTimeline() works everywhere in this route — including
- * during static prerendering.
+ * Per-page provider mounting, same pattern as the reports page:
+ * - ProjectProvider comes from the (app) layout.
+ * - FinanceProvider + TimelineProvider are mounted HERE, in that order,
+ *   because TimelineProvider reads payment obligations from the Finance
+ *   module (useFinance) and must sit underneath it.
+ * With this chain every useTimeline() call inside the workspace resolves
+ * during static prerendering too.
  */
 
+import { FinanceProvider } from "@/lib/finance-context";
 import { TimelineProvider } from "@/providers/TimelineProvider";
 import { TimelineWorkspace } from "@/components/timeline/TimelineWorkspace";
 
 export default function TimelinePage() {
   return (
-    <TimelineProvider>
-      <TimelineWorkspace />
-    </TimelineProvider>
+    <FinanceProvider>
+      <TimelineProvider>
+        <TimelineWorkspace />
+      </TimelineProvider>
+    </FinanceProvider>
   );
 }
