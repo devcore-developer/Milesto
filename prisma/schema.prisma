@@ -1,13 +1,25 @@
-// My List — Prisma schema (SQLite)
-// Note: SQLite does not support Prisma enums — status/priority fields are
-// String columns validated at the application layer (zod + TS unions).
+// My List — Prisma schema (PostgreSQL / Neon)
+//
+// Production twin of prisma/schema.prisma (SQLite). The 13 models below are
+// identical apart from the datasource provider, so the same application
+// code runs unchanged against either database.
+//
+// Usage (see DEPLOYMENT.md §3):
+//   DATABASE_URL="postgresql://…neon.tech/neondb?sslmode=require" \
+//     npx prisma db push --schema prisma/schema.postgres.prisma
+//   npx prisma generate --schema prisma/schema.postgres.prisma
+//
+// Note: SQLite does not support Prisma enums, and this schema keeps the
+// same design on PostgreSQL (status/priority are String columns validated
+// at the application layer via zod + TS unions) so both schemas stay
+// perfectly portable and interchangeable.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
