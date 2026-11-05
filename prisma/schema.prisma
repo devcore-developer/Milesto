@@ -1,0 +1,334 @@
+// My List — Prisma schema (SQLite)
+// Note: SQLite does not support Prisma enums — status/priority fields are
+// String columns validated at the application layer (zod + TS unions).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── Auth ─────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  categories      Category[]
+  tasks           Task[]
+  projects        Project[]
+  clients          Client[]
+  invoices         Invoice[]
+  notifications    Notification[]
+  documents        DocumentRecord[]
+  reminderSetting  ReminderSetting?
+  businessSettings BusinessSettings?
+}
+
+// ───────────────────────── Tasks ─────────────────────────
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String
+  color     String   @default("#1E3A8A")
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  title       String
+  notes       String?
+  // TODO | IN_PROGRESS | COMPLETED
+  status      String    @default("TODO")
+  // LOW | MEDIUM | HIGH | URGENT
+  priority    String    @default("MEDIUM")
+  startDate   DateTime?
+  dueDate     DateTime?
+  completedAt DateTime?
+  order       Int       @default(0)
+
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  projectId  String?
+  project    Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  subtasks      Subtask[]
+  notifications Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([userId, dueDate])
+  @@index([userId, projectId])
+}
+
+model Subtask {
+  id        String   @id @default(cuid())
+  title     String
+  completed Boolean  @default(false)
+  order     Int      @default(0)
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taskId])
+}
+
+// ───────────────────────── Projects ─────────────────────────
+
+model Project {
+  id           String    @id @default(cuid())
+  name         String
+  description  String?
+  // PLANNING | ACTIVE | ON_HOLD | COMPLETED | CANCELLED
+  status       String    @default("PLANNING")
+  // LOW | MEDIUM | HIGH | URGENT
+  priority     String    @default("MEDIUM")
+  startDate    DateTime?
+  deadline     DateTime?
+  deliveryDate DateTime?
+  color        String?
+  notes        String?
+
+  // ── Financials (Phase 4) ──
+  // Total value = agreedPrice + additionalCharges - discount (clamped ≥ 0)
+  agreedPrice       Float   @default(0)
+  additionalCharges Float   @default(0)
+  additionalNotes   String?
+  discount          Float   @default(0)
+
+  userId   String
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  tasks    Task[]
+  invoices Invoice[]
+  documents DocumentRecord[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+}
+
+// ───────────────────────── Clients ─────────────────────────
+
+model Client {
+  id      String  @id @default(cuid())
+  name    String
+  company String?
+  email   String?
+  phone   String?
+  address String?
+  notes   String?
+  // ACTIVE | INACTIVE
+  status  String  @default("ACTIVE")
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  projects  Project[]
+  invoices  Invoice[]
+  documents DocumentRecord[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ───────────────────────── Invoices ─────────────────────────
+
+model Invoice {
+  id        String   @id @default(cuid())
+  number    String   @unique
+  // DRAFT | SENT | PAID | PARTIALLY_PAID | OVERDUE | CANCELLED
+  status    String   @default("DRAFT")
+  issueDate DateTime @default(now())
+  dueDate   DateTime?
+
+  subtotal       Float  @default(0)
+  // PERCENTAGE | FIXED
+  discountType   String @default("PERCENTAGE")
+  discountValue  Float  @default(0)
+  discountAmount Float  @default(0)
+  // Delivery / extra fees on top of the line items (Phase 5)
+  additionalCharges Float @default(0)
+  additionalNotes  String?
+  // total = subtotal − discountAmount + additionalCharges (≥ 0)
+  total          Float  @default(0)
+  amountPaid     Float  @default(0)
+  currency       String @default("EGP")
+
+  notes String?
+  terms String?
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId  String?
+  client    Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  items    InvoiceItem[]
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  description String
+  quantity    Float   @default(1)
+  unitPrice   Float   @default(0)
+  amount      Float   @default(0)
+  order       Int     @default(0)
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+// ───────────────── Payments (Phase 4) ─────────────────
+
+// Recorded payments against an invoice. `Invoice.amountPaid` is always
+// kept in sync with the sum of these rows — payments are the single
+// source of truth for how much of an invoice has been collected.
+model Payment {
+  id        String   @id @default(cuid())
+  amount    Float
+  paidAt    DateTime @default(now())
+  // CASH | BANK_TRANSFER | CARD | OTHER
+  method    String?
+  notes     String?
+
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+// ───────────────────── Notifications & Documents ─────────────────────
+
+model Notification {
+  id      String  @id @default(cuid())
+  // DEADLINE_APPROACHING | OVERDUE | SYSTEM
+  type    String
+  title   String
+  message String
+  read    Boolean @default(false)
+  taskId  String?
+  task    Task?   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+}
+
+// ───────────── Documents (Phase 6) ─────────────
+
+// Saved documents: Scope of Work, Work Completion Report, Project Progress
+// Report and Custom Project Reports. The full section content is stored as
+// a JSON string (DocumentContent — see lib/documents.ts) so documents can
+// be re-opened, re-edited and re-exported at any time.
+model DocumentRecord {
+  id     String @id @default(cuid())
+  // SCOPE_OF_WORK | COMPLETION_REPORT | PROGRESS_REPORT | CUSTOM_REPORT
+  type   String
+  // Auto-generated DOC-YYYY-#### (unique across the app)
+  number String @unique
+  title  String
+  // Output language of the document itself: "en" | "ar"
+  language String @default("en")
+  issueDate DateTime @default(now())
+  // JSON-serialized DocumentContent { sections: [...] }
+  content String @default("{\"sections\":[]}")
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId String?
+  client   Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, type])
+  @@index([clientId])
+  @@index([projectId])
+}
+
+// ───────────── Business / invoice settings (Phase 5) ─────────────
+
+// Singleton row per user — branding & defaults used on invoices and PDF
+// exports (business info, logo, currency, footer, payment instructions).
+model BusinessSettings {
+  id                  String   @id @default(cuid())
+  businessName        String   @default("My List")
+  businessEmail       String?
+  businessPhone       String?
+  businessAddress     String?
+  // Free-text tax identification shown on invoices (optional)
+  taxInfo             String?
+  // ISO currency code applied to new invoices (EGP, USD, …)
+  currency            String   @default("EGP")
+  invoiceFooter       String?
+  paymentInstructions String?
+  // Logo stored as a data URL (data:image/…;base64,…) — kept small (≤ 400 KB)
+  logoData            String?
+  logoName            String?
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ───────────────────── Reminder settings (Phase 3) ─────────────────────
+
+// One row per user — the notification bell & dashboard read these values.
+model ReminderSetting {
+  id                String  @id @default(cuid())
+  // Master switch for deadline reminders
+  enabled           Boolean @default(true)
+  // Remind when a task is due within N days (0 = same day only)
+  taskDaysBefore    Int     @default(3)
+  // Remind when a project deadline/delivery is within N days
+  projectDaysBefore Int     @default(7)
+  // Also list overdue items
+  includeOverdue    Boolean @default(true)
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
