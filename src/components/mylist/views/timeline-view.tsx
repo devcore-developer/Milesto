@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { AlertTriangle, CalendarRange, Flag, FolderKanban } from "lucide-react";
+import { useMemo, useState } from "react";
+import { AlertTriangle, CalendarRange, ChevronDown, ChevronRight, Flag, FolderKanban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +15,7 @@ import {
   ProjectStatusBadge,
   projectStatusLabelKey,
 } from "@/components/mylist/project/badges";
+import { ProjectTaskTimeline } from "@/components/mylist/timeline/project-task-timeline";
 
 const DAY_MS = 86_400_000;
 
@@ -81,10 +82,14 @@ function TimelineRow({
   project,
   scale,
   todayOffset,
+  expanded,
+  onToggle,
 }: {
   project: ProjectDTO;
   scale: Scale;
   todayOffset: number;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   const { t, lang } = useI18n();
   const openProject = useUIStore((s) => s.openProject);
@@ -118,9 +123,26 @@ function TimelineRow({
     >
       {/* Name column */}
       <div className="w-44 shrink-0 ps-1">
-        <p className="truncate text-sm font-medium text-slate-800" dir="auto">
-          {project.name}
-        </p>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            aria-label={project.name}
+            className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle();
+            }}
+          >
+            {expanded ? (
+              <ChevronDown className="size-3.5" />
+            ) : (
+              <ChevronRight className="size-3.5 rtl:rotate-180" />
+            )}
+          </button>
+          <p className="truncate text-sm font-medium text-slate-800" dir="auto">
+            {project.name}
+          </p>
+        </div>
         <p className="truncate text-[11px] text-slate-400" dir="ltr">
           {project.startDate ? formatDate(project.startDate, lang, "d MMM") : "…"}
           {" → "}
@@ -199,6 +221,7 @@ function TimelineRow({
 export function TimelineView() {
   const { t, isRTL } = useI18n();
   const setView = useUIStore((s) => s.setView);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const { data, isLoading } = useProjects();
   const projects = data?.projects ?? [];
@@ -286,12 +309,20 @@ export function TimelineView() {
             {/* Rows */}
             <div className="px-3">
               {withDates.map((p) => (
-                <TimelineRow
-                  key={p.id}
-                  project={p}
-                  scale={scale}
-                  todayOffset={todayOffset}
-                />
+                <div key={p.id}>
+                  <TimelineRow
+                    project={p}
+                    scale={scale}
+                    todayOffset={todayOffset}
+                    expanded={expandedId === p.id}
+                    onToggle={() =>
+                      setExpandedId((cur) => (cur === p.id ? null : p.id))
+                    }
+                  />
+                  {expandedId === p.id && (
+                    <ProjectTaskTimeline project={p} />
+                  )}
+                </div>
               ))}
             </div>
             </div>

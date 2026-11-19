@@ -96,6 +96,7 @@ export function TaskDialog({
   const [projectId, setProjectId] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [startDate, setStartDate] = useState("");
+  const [isMilestone, setIsMilestone] = useState(false);
   const [subs, setSubs] = useState<LocalSubtask[]>([]);
   const [newSub, setNewSub] = useState("");
   const [showCatInput, setShowCatInput] = useState(false);
@@ -108,6 +109,7 @@ export function TaskDialog({
       setNotes(task?.notes ?? "");
       setStatus(task?.status ?? "TODO");
       setPriority(task?.priority ?? "MEDIUM");
+      setIsMilestone(task?.isMilestone ?? false);
       setCategoryId(task?.categoryId ?? "");
       setProjectId(task?.projectId ?? presetProjectId ?? "");
       setDueDate(task?.dueDate ? toDateInput(task.dueDate) : (presetDueDate ?? ""));
@@ -163,6 +165,7 @@ export function TaskDialog({
       projectId: projectId || null,
       dueDate: fromDateInput(dueDate),
       startDate: fromDateInput(startDate),
+      isMilestone,
     };
     try {
       if (isEdit && task) {
@@ -295,6 +298,19 @@ export function TaskDialog({
               />
             </div>
           </div>
+
+          {/* Milestone marker (Phase A4) — zero-duration diamond on the timeline */}
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
+            <span className="flex items-center gap-2 text-sm text-slate-600">
+              ◆ {t("sched.milestone")}
+            </span>
+            <input
+              type="checkbox"
+              checked={isMilestone}
+              onChange={(e) => setIsMilestone(e.target.checked)}
+              className="size-4"
+            />
+          </label>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">

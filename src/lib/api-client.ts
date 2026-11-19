@@ -1,8 +1,15 @@
 "use client";
 
 import type {
+  AIDraftDTO,
+  AIDraftSummaryDTO,
   AuthState,
   AuthUser,
+  BriefAttachmentDTO,
+  BriefDTO,
+  BriefLanguage,
+  BriefSourceType,
+  BriefVersionDTO,
   BusinessSettingsDTO,
   CategoryDTO,
   ClientDTO,
@@ -18,6 +25,8 @@ import type {
   TaskDTO,
 } from "@/lib/types";
 import type { ReminderSettings } from "@/lib/notifications";
+import type { AIHealthDTO, AIStatusDTO } from "@/lib/ai/types";
+import type { AIPlan } from "@/lib/ai/plan-schema";
 
 export class ApiError extends Error {
   code: string;
@@ -85,6 +94,7 @@ export interface TaskFilters {
   status?: string;
   priority?: string;
   categoryId?: string;
+  projectId?: string;
   q?: string;
 }
 
@@ -338,6 +348,20 @@ export interface BusinessSettingsInput {
   /** Logo as a data URL — empty string clears the stored logo */
   logoData?: string | null;
   logoName?: string | null;
+  // ── Scheduling engine (Phase A4) ──
+  workingDays?: string;
+  workingHoursPerDay?: number;
+  holidays?: string;
+  defaultTaskDurationDays?: number;
+  autoScheduleNewTasks?: boolean;
+}
+
+export interface TimelineComputeInput {
+  mode?: "forward" | "backward";
+  apply?: boolean;
+  startDate?: string;
+  deadline?: string | null;
+  overwriteAll?: boolean;
 }
 
 export const businessSettingsApi = {
@@ -346,6 +370,109 @@ export const businessSettingsApi = {
   update: (body: BusinessSettingsInput) =>
     request<{ settings: BusinessSettingsDTO }>("/api/business-settings", {
       method: "PUT",
+      body: JSON.stringify(body),
+    }),
+};
+
+// ───────────── Dependencies & timeline (Phase A4) ─────────────
+
+export const tasksApiExtra = {
+  setDependencies: (taskId: string, dependsOnIds: string[]) =>
+    request<{ dependsOn: string[] }>(`/api/tasks/${taskId}/dependencies`, {
+      method: "PUT",
+      body: JSON.stringify({ dependsOnIds }),
+    }),
+  getDependencies: (taskId: string) =>
+    request<{ dependsOn: string[] }>(`/api/tasks/${taskId}/dependencies`),
+};
+
+export const assistantApi = {
+  ask: (
+    projectId: string,
+    body: { question: string; conversationId?: string; language?: "en" | "ar" },
+  ) =>
+    request<{ conversationId: string; answer: string; createdAt: string }>(
+      `/api/projects/${projectId}/ai-assistant`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  listConversations: (projectId: string) =>
+    request<{
+      conversations: {
+        id: string;
+        title: string;
+        language: string;
+        messageCount: number;
+        updatedAt: string;
+      }[];
+    }>(`/api/projects/${projectId}/ai-assistant/conversations`),
+  newConversation: (projectId: string, title: string, language: "en" | "ar") =>
+    request<{ conversation: { id: string; title: string } }>(
+      `/api/projects/${projectId}/ai-assistant/conversations`,
+      { method: "POST", body: JSON.stringify({ title, language }) },
+    ),
+  getConversation: (conversationId: string) =>
+    request<{
+      conversation: { id: string; title: string; language: string; projectId: string | null };
+      messages: { id: string; role: "USER" | "ASSISTANT"; content: string; createdAt: string }[];
+    }>(`/api/ai/assistant/conversations/${conversationId}`),
+  renameConversation: (conversationId: string, title: string) =>
+    request<{ conversation: { id: string; title: string } }>(
+      `/api/ai/assistant/conversations/${conversationId}`,
+      { method: "PATCH", body: JSON.stringify({ title }) },
+    ),
+  deleteConversation: (conversationId: string) =>
+    request<{ ok: boolean }>(`/api/ai/assistant/conversations/${conversationId}`, {
+      method: "DELETE",
+    }),
+};
+
+export const aiTaskApi = {
+  /** REVIEW-FIRST split proposal — nothing is saved server-side. */
+  split: (taskId: string, language: "en" | "ar" = "en") =>
+    request<{ proposals: { title: string }[] }>(`/api/tasks/${taskId}/ai-split`, {
+      method: "POST",
+      body: JSON.stringify({ language }),
+    }),
+};
+
+export const reportsApi = {
+  /** DETERMINISTIC progress/completion report from real rows (no AI needed). */
+  generate: (projectId: string, type: "PROGRESS_REPORT" | "COMPLETION_REPORT", language: "en" | "ar") =>
+    request<{ document: { id: string; number: string; title: string; versionNo: number } }>(
+      `/api/projects/${projectId}/reports/generate`,
+      { method: "POST", body: JSON.stringify({ type, language }) },
+    ),
+};
+
+export const sowApi = {
+  /** AI Scope of Work → new immutable version in the documents module. */
+  generate: (projectId: string, language: "en" | "ar" = "en") =>
+    request<{ document: { id: string; number: string; title: string; versionNo: number } }>(
+      `/api/projects/${projectId}/sow/generate`,
+      { method: "POST", body: JSON.stringify({ language }) },
+    ),
+};
+
+export const timelineApi = {
+  compute: (projectId: string, body: TimelineComputeInput = {}) =>
+    request<{
+      schedule: {
+        taskId: string;
+        title: string;
+        isMilestone: boolean;
+        start: string | null;
+        end: string | null;
+        durationDays: number;
+      }[];
+      makespanDays: number;
+      planStart: string | null;
+      planEnd: string | null;
+      cyclic: string[];
+      workingDays: number[];
+      holidays: string[];
+      applied: number;
+    }>(`/api/projects/${projectId}/timeline`, {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 };
@@ -417,4 +544,123 @@ export function documentPdfUrl(documentId: string, download = false): string {
 export const statsApi = {
   get: (tzOffset: number) =>
     request<{ stats: DashboardStats }>(`/api/stats?tzOffset=${tzOffset}`),
+};
+
+// ───────────────────────── AI (Phase A1) ─────────────────────────
+
+export const aiApi = {
+  /** Secret-free provider status — no provider call is made. */
+  status: () => request<AIStatusDTO>("/api/ai/health"),
+  /** One minimal connectivity probe (Settings "Test connection"). */
+  test: () => request<AIHealthDTO>("/api/ai/health?probe=1"),
+};
+
+// ───────────────────── Project Brief (Phase A2) ─────────────────────
+
+/** multipart uploader — lets the browser set the multipart Content-Type. */
+async function requestForm<T>(url: string, form: FormData): Promise<T> {
+  const res = await fetch(url, { method: "POST", body: form });
+  if (!res.ok) {
+    let code = "SERVER_ERROR";
+    try {
+      const body = await res.json();
+      code = body.error ?? code;
+    } catch {
+      // non-JSON error body
+    }
+    throw new ApiError(code, res.status);
+  }
+  return res.json() as Promise<T>;
+}
+
+export const briefApi = {
+  get: (projectId: string) =>
+    request<{ brief: BriefDTO }>(`/api/projects/${projectId}/brief`),
+  /** Full body of one specific version (version history → open). */
+  getVersion: (projectId: string, versionNo: number) =>
+    request<{ version: BriefVersionDTO }>(
+      `/api/projects/${projectId}/brief?version=${versionNo}`,
+    ),
+  save: (
+    projectId: string,
+    body: {
+      content: string;
+      transcript?: string | null;
+      language: BriefLanguage;
+      sourceTypes: BriefSourceType[];
+    },
+  ) =>
+    request<{ version: BriefVersionDTO }>(`/api/projects/${projectId}/brief`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  uploadAttachment: (
+    projectId: string,
+    file: { name: string; mime: string; size: number; dataUrl: string },
+  ) =>
+    request<{ attachment: BriefAttachmentDTO }>(
+      `/api/projects/${projectId}/brief/attachments`,
+      { method: "POST", body: JSON.stringify(file) },
+    ),
+  deleteAttachment: (projectId: string, attachmentId: string) =>
+    request<{ ok: boolean }>(
+      `/api/projects/${projectId}/brief/attachments/${attachmentId}`,
+      { method: "DELETE" },
+    ),
+  /** Original file bytes as a data URL (used by "open original"). */
+  getAttachmentOriginal: async (projectId: string, attachmentId: string) => {
+    const res = await fetch(
+      `/api/projects/${projectId}/brief/attachments/${attachmentId}?download=1`,
+    );
+    if (!res.ok) throw new ApiError("ATTACHMENT_NOT_FOUND", res.status);
+    return (await res.json()) as {
+      attachment: BriefAttachmentDTO & { dataUrl: string | null };
+    };
+  },
+};
+
+export const transcribeApi = {
+  /** Voice → raw transcript (audio is never persisted server-side). */
+  transcribe: (file: Blob, filename: string) => {
+    const form = new FormData();
+    form.append("file", file, filename);
+    return requestForm<{ transcript: string }>("/api/ai/transcribe", form);
+  },
+};
+
+// ─────────────── AI plan drafts (Phase A3) ───────────────
+
+export const aiDraftsApi = {
+  list: (projectId: string) =>
+    request<{ drafts: AIDraftSummaryDTO[] }>(`/api/projects/${projectId}/ai-drafts`),
+  /** Staged analysis — one request, three short AI calls server-side. */
+  analyze: (projectId: string, language: "en" | "ar") =>
+    request<{ draft: AIDraftDTO; warning?: string }>(
+      `/api/projects/${projectId}/ai-analyze`,
+      { method: "POST", body: JSON.stringify({ language }) },
+    ),
+  get: (draftId: string) =>
+    request<{ draft: AIDraftDTO }>(`/api/ai/drafts/${draftId}`),
+  /** Persist reviewer edits (the whole plan). */
+  save: (draftId: string, payload: AIPlan) =>
+    request<{ draft: AIDraftDTO }>(`/api/ai/drafts/${draftId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ payload }),
+    }),
+  discard: (draftId: string) =>
+    request<{ draft: AIDraftDTO }>(`/api/ai/drafts/${draftId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "DISCARDED" }),
+    }),
+  /** One-way approval — creates ONLY the accepted tasks. */
+  approve: (draftId: string, acceptedTaskIds: string[]) =>
+    request<{ created: number; draft: AIDraftDTO }>(
+      `/api/ai/drafts/${draftId}/approve`,
+      { method: "POST", body: JSON.stringify({ acceptedTaskIds }) },
+    ),
+  regenerateModule: (draftId: string, moduleIndex: number) =>
+    request<{ draft: AIDraftDTO }>(
+      `/api/ai/drafts/${draftId}/regenerate-module`,
+      { method: "POST", body: JSON.stringify({ moduleIndex }) },
+    ),
 };

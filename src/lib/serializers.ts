@@ -1,7 +1,13 @@
 // Server-side DTO builders (Phase 4) — convert Prisma rows into the wire
 // DTOs defined in lib/types.ts. Structural input types keep them compatible
 // with any `include` shape used by the API routes.
+import { normalizePlan, planTaskCount, type AIPlan } from "@/lib/ai/plan-schema";
 import type {
+  AIDraftDTO,
+  AIDraftSummaryDTO,
+  BriefAttachmentDTO,
+  BriefSourceType,
+  BriefVersionDTO,
   ClientDTO,
   ClientFinancials,
   ClientStatus,
@@ -164,6 +170,9 @@ export interface DocumentRowLike {
   content: string;
   clientId: string | null;
   projectId: string | null;
+  versionNo: number;
+  previousVersionId: string | null;
+  aiTrace: string | null;
   createdAt: Date;
   updatedAt: Date;
   client?: {
@@ -210,6 +219,9 @@ export function serializeDocumentRecord(row: DocumentRowLike): DocumentRecordDTO
       : null,
     project: row.project ?? null,
     content: parseContent(row.content),
+    versionNo: row.versionNo,
+    previousVersionId: row.previousVersionId,
+    aiTrace: row.aiTrace,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -295,4 +307,121 @@ export function projectFinancialSummary(
 /** Narrow helper used when reusing ProjectDTO data client-side. */
 export function projectValueOf(p: ProjectDTO): number {
   return projectTotalValue(p);
+}
+
+// ───────────────────────── Brief (Phase A2) ─────────────────────────
+
+interface AttachmentRowLike {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  processingStatus: string;
+  extractedText: string | null;
+  visionSummary: string | null;
+  createdAt: Date;
+}
+
+/** Attachments are listed without their (potentially heavy) data URLs. */
+export function serializeBriefAttachment(a: AttachmentRowLike): BriefAttachmentDTO {
+  return {
+    id: a.id,
+    name: a.name,
+    mime: a.mime,
+    size: a.size,
+    processingStatus: a.processingStatus as BriefAttachmentDTO["processingStatus"],
+    extractedText: a.extractedText,
+    visionSummary: a.visionSummary,
+    createdAt: a.createdAt.toISOString(),
+  };
+}
+
+interface VersionRowLike {
+  id: string;
+  versionNo: number;
+  content: string;
+  transcript: string | null;
+  language: string;
+  sourceTypes: string;
+  attachments: AttachmentRowLike[];
+  createdAt: Date;
+}
+
+export function serializeBriefVersion(v: VersionRowLike): BriefVersionDTO {
+  let sourceTypes: BriefSourceType[] = [];
+  try {
+    const parsed: unknown = JSON.parse(v.sourceTypes);
+    if (Array.isArray(parsed)) {
+      sourceTypes = parsed.filter(
+        (s): s is BriefSourceType =>
+          s === "text" || s === "voice" || s === "files",
+      );
+    }
+  } catch {
+    // corrupt JSON → treat as no sources
+  }
+  return {
+    id: v.id,
+    versionNo: v.versionNo,
+    content: v.content,
+    transcript: v.transcript,
+    language: v.language as BriefVersionDTO["language"],
+    sourceTypes,
+    attachments: v.attachments.map(serializeBriefAttachment),
+    createdAt: v.createdAt.toISOString(),
+  };
+}
+
+// ───────────────────── AI plan drafts (Phase A3) ─────────────────────
+
+interface DraftRowLike {
+  id: string;
+  projectId: string;
+  briefVersionId: string | null;
+  status: string;
+  language: string;
+  provider: string | null;
+  model: string | null;
+  payload: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export function draftPayloadOf(row: { payload: string }): AIPlan {
+  try {
+    return normalizePlan(JSON.parse(row.payload));
+  } catch {
+    return normalizePlan(null);
+  }
+}
+
+export function serializeAIDraft(row: DraftRowLike): AIDraftDTO {
+  const plan = draftPayloadOf(row);
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    briefVersionId: row.briefVersionId,
+    status: row.status as AIDraftDTO["status"],
+    language: row.language as AIDraftDTO["language"],
+    provider: row.provider,
+    model: row.model,
+    payload: plan,
+    moduleCount: plan.modules.length,
+    taskCount: planTaskCount(plan),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function serializeAIDraftSummary(row: DraftRowLike): AIDraftSummaryDTO {
+  const plan = draftPayloadOf(row);
+  return {
+    id: row.id,
+    status: row.status as AIDraftSummaryDTO["status"],
+    language: row.language as AIDraftSummaryDTO["language"],
+    moduleCount: plan.modules.length,
+    taskCount: planTaskCount(plan),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }

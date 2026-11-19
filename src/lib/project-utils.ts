@@ -132,3 +132,11 @@ export function serializeProject(project: ProjectRow, doneCount?: number): Proje
     updatedAt: project.updatedAt.toISOString(),
   };
 }
+
+/** Finish-to-start dependency ids (Phase A4) from the raw Prisma include
+ *  (`blockingDependencies: { select: { dependsOnId: true } }`). */
+export function taskDependsOnIds(
+  t: { blockingDependencies?: { dependsOnId: string }[] | null },
+): string[] {
+  return t.blockingDependencies?.map((d) => d.dependsOnId) ?? [];
+}

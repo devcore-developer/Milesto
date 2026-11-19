@@ -8,6 +8,7 @@ import {
   type TaskDTO,
   type TaskPriority,
 } from "@/lib/types";
+import { taskDependsOnIds } from "@/lib/project-utils";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -36,10 +37,15 @@ export async function GET(req: NextRequest) {
       include: {
         subtasks: { orderBy: [{ order: "asc" }, { createdAt: "asc" }] },
         category: { select: { id: true, name: true, color: true } },
+        blockingDependencies: { select: { dependsOnId: true } },
       },
     });
 
-    const serialized = tasks as unknown as TaskDTO[];
+    const serialized = tasks.map((t) => ({
+      ...t,
+      dependsOn: taskDependsOnIds(t),
+      blockingDependencies: undefined,
+    })) as unknown as TaskDTO[];
 
     const totals = {
       all: serialized.length,

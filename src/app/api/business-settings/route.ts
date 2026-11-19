@@ -58,6 +58,15 @@ export async function PUT(req: NextRequest) {
     } else if (d.logoName !== undefined) {
       data.logoName = d.logoName;
     }
+    // ── Scheduling engine (Phase A4) ──
+    if (d.workingDays !== undefined) data.workingDays = d.workingDays;
+    if (d.workingHoursPerDay !== undefined)
+      data.workingHoursPerDay = d.workingHoursPerDay;
+    if (d.holidays !== undefined) data.holidays = d.holidays;
+    if (d.defaultTaskDurationDays !== undefined)
+      data.defaultTaskDurationDays = d.defaultTaskDurationDays;
+    if (d.autoScheduleNewTasks !== undefined)
+      data.autoScheduleNewTasks = d.autoScheduleNewTasks;
 
     const row = await db.businessSettings.update({
       where: { userId: user.id },

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   Bell,
+  Bot,
   Check,
   Globe,
   Info,
@@ -28,7 +29,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useChangePassword, useUpdateProfile } from "@/hooks/use-mylist";
+import {
+  useAIStatus,
+  useChangePassword,
+  useTestAIConnection,
+  useUpdateProfile,
+} from "@/hooks/use-mylist";
 import { useI18n } from "@/lib/i18n";
 import type { TranslationKey } from "@/lib/i18n/en";
 import { useUIStore } from "@/lib/store";
@@ -46,10 +52,44 @@ const REMINDER_DAY_KEY: Record<number, TranslationKey> = {
   14: "notifications.days14",
 };
 
+// ── AI provider panel (Phase A1) ──
+const AI_CAPABILITIES = [
+  { name: "chat" as const, labelKey: "ai.capChat" as TranslationKey },
+  { name: "vision" as const, labelKey: "ai.capVision" as TranslationKey },
+  { name: "stt" as const, labelKey: "ai.capStt" as TranslationKey },
+];
+
+const AI_PROBE_ERROR_KEY: Record<string, TranslationKey> = {
+  AI_AUTH: "ai.errorAuth",
+  AI_PROVIDER_RATE_LIMIT: "ai.errorRateLimit",
+  AI_RATE_LIMITED: "ai.errorRateLimit",
+  AI_TIMEOUT: "ai.errorTimeout",
+  AI_NETWORK: "ai.errorNetwork",
+  AI_PROVIDER_ERROR: "ai.errorProvider",
+  AI_BAD_RESPONSE: "ai.errorProvider",
+};
+
+function probeMessage(
+  probe: { ok: boolean; latencyMs?: number; error?: string },
+  t: (key: TranslationKey, vars?: Record<string, string | number>) => string,
+): { ok: boolean; text: string } {
+  if (probe.ok) {
+    return { ok: true, text: t("ai.testOk", { ms: probe.latencyMs ?? 0 }) };
+  }
+  const key = AI_PROBE_ERROR_KEY[probe.error ?? ""] ?? "ai.errorProvider";
+  return { ok: false, text: t("ai.testFailed", { error: t(key) }) };
+}
+
 export function SettingsView({ user }: { user: AuthUser }) {
   const { t, lang, setLang } = useI18n();
   const updateProfile = useUpdateProfile();
   const changePassword = useChangePassword();
+  const ai = useAIStatus();
+  const testConnection = useTestAIConnection();
+  const probe =
+    testConnection.data?.probe != null
+      ? probeMessage(testConnection.data.probe, t)
+      : null;
 
   const [name, setName] = useState(user.name ?? "");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -182,6 +222,112 @@ export function SettingsView({ user }: { user: AuthUser }) {
             {changePassword.isPending && <Loader2 className="size-4 animate-spin" />}
             {t("settings.updatePassword")}
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* AI provider (Phase A1) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Bot className="size-4.5 text-primary" />
+            {t("ai.sectionTitle")}
+          </CardTitle>
+          <CardDescription>{t("ai.sectionDesc")}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {ai.isLoading ? (
+            <p className="text-sm text-slate-400">{t("loading")}</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={cn(
+                    "rounded-full px-2.5 py-0.5 text-xs font-medium",
+                    ai.data?.configured
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-slate-100 text-slate-500",
+                  )}
+                >
+                  {ai.data?.configured
+                    ? t("ai.statusActive")
+                    : t("ai.statusNotConfigured")}
+                </span>
+                {ai.data?.provider && (
+                  <span
+                    className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
+                    dir="ltr"
+                  >
+                    {ai.data.provider}
+                  </span>
+                )}
+                {ai.data?.model && (
+                  <span
+                    className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600"
+                    dir="ltr"
+                  >
+                    {ai.data.model}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-3">
+                {AI_CAPABILITIES.map((cap) => {
+                  const ok = ai.data?.capabilities[cap.name] ?? false;
+                  return (
+                    <div
+                      key={cap.name}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2"
+                    >
+                      <span className="text-sm text-slate-600">
+                        {t(cap.labelKey)}
+                      </span>
+                      <span
+                        className={cn(
+                          "text-xs font-medium",
+                          ok ? "text-emerald-600" : "text-slate-400",
+                        )}
+                      >
+                        {ok ? t("ai.capAvailable") : t("ai.capUnavailable")}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {ai.data?.configured ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => testConnection.mutate()}
+                    disabled={testConnection.isPending}
+                  >
+                    {testConnection.isPending && (
+                      <Loader2 className="size-4 animate-spin" />
+                    )}
+                    {t("ai.testConnection")}
+                  </Button>
+                  {probe && (
+                    <p
+                      className={cn(
+                        "text-sm",
+                        probe.ok ? "text-emerald-600" : "text-red-600",
+                      )}
+                    >
+                      {probe.text}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                  <p>{t("ai.notConfiguredHint")}</p>
+                  <p className="font-mono text-xs text-slate-500" dir="ltr">
+                    AI_PROVIDER · AI_API_KEY · AI_BASE_URL · AI_MODEL
+                  </p>
+                  <p>{t("ai.freeTierNote")}</p>
+                </div>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
 

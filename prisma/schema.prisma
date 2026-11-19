@@ -59,6 +59,9 @@ model Task {
   dueDate     DateTime?
   completedAt DateTime?
   order       Int       @default(0)
+  // Milestones are zero-duration markers (Phase A4) — the timeline and
+  // calendar treat them as diamonds, reminders keep treating them as tasks.
+  isMilestone Boolean   @default(false)
 
   userId     String
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -69,6 +72,9 @@ model Task {
 
   subtasks      Subtask[]
   notifications Notification[]
+  // Phase A4 dependencies: this task is blocked by / blocks.
+  blockingDependencies TaskDependency[] @relation("Blocking")
+  dependingOn          TaskDependency[] @relation("DependsOn")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -122,6 +128,9 @@ model Project {
   tasks    Task[]
   invoices Invoice[]
   documents DocumentRecord[]
+  brief    ProjectBrief?
+  aiPlanDrafts AIPlanDraft[]
+  aiConversations AIConversation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -270,6 +279,15 @@ model DocumentRecord {
   // JSON-serialized DocumentContent { sections: [...] }
   content String @default("{\"sections\":[]}")
 
+  // ── AI versioning (Phase A5) ──
+  // 1 for manual documents; AI-generated SoWs/reports increment per project.
+  versionNo Int @default(1)
+  // Chain to the superseded version (null for the first version).
+  previousVersionId String?
+  // JSON traceability map { [sectionId]: sourceQuotes[] } — null for manual
+  // documents, letting the review UI show which brief lines fed each section.
+  aiTrace String?
+
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   clientId String?
@@ -305,6 +323,16 @@ model BusinessSettings {
   logoData            String?
   logoName            String?
 
+  // ── Scheduling engine (Phase A4) ──
+  // JSON weekday array, 0=Sunday. Weekends are DERIVED as the complement
+  // (single source of truth — storing both could contradict).
+  workingDays         String   @default("[0,1,2,3,4]")
+  workingHoursPerDay  Float    @default(8)
+  // JSON array of "YYYY-MM-DD" (fixed) and "MM-DD" (recurring yearly).
+  holidays            String   @default("[]")
+  defaultTaskDurationDays Float @default(1)
+  autoScheduleNewTasks Boolean @default(true)
+
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -331,4 +359,140 @@ model ReminderSetting {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ───────────── Project Brief (Phase A2) ─────────────
+
+// One brief per project. The brief is the source-of-truth artifact the AI
+// analysis (Phase A3) and the SoW generator (Phase A5) read from.
+model ProjectBrief {
+  id        String   @id @default(cuid())
+  projectId String   @unique
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions  BriefVersion[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Every save creates a new immutable version — nothing is ever overwritten,
+// so earlier wording can always be recovered. `content` is the working text
+// exactly as typed (never AI-rewritten); `transcript` keeps the raw ASR
+// output untouched beside the edited text.
+model BriefVersion {
+  id        String       @id @default(cuid())
+  briefId   String
+  brief     ProjectBrief @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  versionNo Int
+  // Original description exactly as typed — NEVER AI-rewritten
+  content   String       @default("")
+  // Raw ASR transcript kept untouched beside the editable working text
+  transcript String?
+  // "en" | "ar" | "mixed" — dominant input language
+  language  String       @default("en")
+  // JSON array: ["text","voice","files"]
+  sourceTypes String     @default("[]")
+  attachments BriefAttachment[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([briefId, versionNo])
+  @@index([briefId])
+}
+
+// Files attached to a brief version. The file itself lives in the DB as a
+// data URL (logoData pattern — no filesystem, Vercel-safe) with a text
+// extraction / vision summary stored beside it for the AI pipeline.
+model BriefAttachment {
+  id            String       @id @default(cuid())
+  versionId     String
+  version       BriefVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  name          String
+  mime          String
+  size          Int
+  // Original file preserved as data URL (size-capped, logoData pattern)
+  dataUrl       String?
+  // Text extracted server-side (txt/md/pdf/docx) — linked to THIS attachment
+  extractedText String?
+  // Vision-capable provider output for images (null when provider lacks vision)
+  visionSummary String?
+  // READY | EXTRACTED | ANALYZED | UNSUPPORTED | FAILED
+  processingStatus String    @default("READY")
+  createdAt     DateTime     @default(now())
+
+  @@index([versionId])
+}
+
+// ───────────── AI plan draft (Phase A3) ─────────────
+
+// A staged AI analysis of the brief, kept as an immutable snapshot the user
+// reviews before anything becomes a real task. Regeneration creates a NEW
+// draft; approval is a one-way transition (DRAFT → APPROVED) and only
+// converts the items the user accepted into rows.
+model AIPlanDraft {
+  id             String  @id @default(cuid())
+  projectId      String
+  project        Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  briefVersionId String?
+  // DRAFT | APPROVED | DISCARDED
+  status         String  @default("DRAFT")
+  // Output language selected independently of the brief's input language
+  language       String  @default("en")
+  // Audit: which provider/model produced this draft
+  provider       String?
+  model          String?
+  // JSON-serialized AIPlan — every item carries classification
+  // (EXPLICIT | INFERRED | SUGGESTION) + sourceQuotes[] (brief substrings).
+  // String + zod pattern (DocumentRecord.content) — portable to Postgres.
+  payload        String  @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([projectId, status])
+}
+
+// ───────────── Task dependencies (Phase A4) ─────────────
+
+// finish-to-start links: `taskId` cannot start before `dependsOnId` ends.
+// Cycles are rejected server-side (topological check) before any save.
+model TaskDependency {
+  id          String @id @default(cuid())
+  taskId      String // blocked task
+  dependsOnId String // must finish first
+  task        Task   @relation("Blocking",  fields: [taskId],      references: [id], onDelete: Cascade)
+  dependsOn   Task   @relation("DependsOn", fields: [dependsOnId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, dependsOnId])
+  @@index([taskId])
+  @@index([dependsOnId])
+}
+
+// ───────────── Assistant memory (Phase A6) ─────────────
+
+// Project-linked chat threads — PostgreSQL-persisted so conversations
+// survive across devices. The BRIEF itself is never truncated; only the
+// AI request context is windowed (last 10 messages + facts digest).
+model AIConversation {
+  id        String   @id @default(cuid())
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title     String
+  // "en" | "ar"
+  language  String   @default("en")
+  messages  AIMessage[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+model AIMessage {
+  id             String         @id @default(cuid())
+  conversationId String
+  conversation   AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  // USER | ASSISTANT
+  role           String
+  content        String
+  createdAt      DateTime       @default(now())
+
+  @@index([conversationId])
 }

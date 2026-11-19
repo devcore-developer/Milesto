@@ -7,16 +7,26 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  aiApi,
+  aiDraftsApi,
   authApi,
+  briefApi,
   businessSettingsApi,
   categoriesApi,
   clientsApi,
   documentsApi,
   invoicesApi,
   paymentsApi,
+  aiTaskApi,
+  assistantApi,
   projectsApi,
+  reportsApi,
+  sowApi,
   statsApi,
   tasksApi,
+  tasksApiExtra,
+  timelineApi,
+  transcribeApi,
   ApiError,
   type BusinessSettingsInput,
   type ClientInput,
@@ -27,11 +37,21 @@ import {
   type ProjectInput,
   type TaskFilters,
   type TaskInput,
+  type TimelineComputeInput,
 } from "@/lib/api-client";
+import type { AIHealthDTO, AIStatusDTO } from "@/lib/ai/types";
+import type { AIPlan } from "@/lib/ai/plan-schema";
 import { useI18n } from "@/lib/i18n";
 import type {
+  AIDraftDTO,
+  AIDraftSummaryDTO,
   AuthState,
   AuthUser,
+  BriefAttachmentDTO,
+  BriefDTO,
+  BriefLanguage,
+  BriefSourceType,
+  BriefVersionDTO,
   BusinessSettingsDTO,
   CategoryDTO,
   ClientDTO,
@@ -63,6 +83,7 @@ export const qk = {
     projectId?: string;
   }) => ["documents", filters] as const,
   businessSettings: ["business-settings"] as const,
+  aiStatus: ["ai-status"] as const,
 };
 
 /** Map API error codes to localized messages. */
@@ -645,6 +666,368 @@ export function useDeleteDocument() {
     onSuccess: () => {
       toast.success(t("documents.deleted"));
       qc.invalidateQueries({ queryKey: ["documents"] });
+    },
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+// ───────────────────────── AI (Phase A1) ─────────────────────────
+
+export function useAIStatus() {
+  return useQuery<AIStatusDTO>({
+    queryKey: qk.aiStatus,
+    queryFn: aiApi.status,
+    staleTime: 30_000,
+  });
+}
+
+export function useTestAIConnection() {
+  return useMutation<AIHealthDTO, unknown, void>({
+    mutationFn: () => aiApi.test(),
+  });
+}
+
+// ───────────────────── Project Brief (Phase A2) ─────────────────────
+
+export function useBrief(projectId: string | null) {
+  return useQuery<{ brief: BriefDTO }>({
+    queryKey: ["brief", projectId ?? "none"],
+    queryFn: () => briefApi.get(projectId as string),
+    enabled: !!projectId,
+    staleTime: 5_000,
+  });
+}
+
+export function useSaveBrief() {
+  const qc = useQueryClient();
+  const message = useApiErrorMessage();
+  const { t } = useI18n();
+  return useMutation<
+    { version: BriefVersionDTO },
+    unknown,
+    {
+      projectId: string;
+      content: string;
+      transcript?: string | null;
+      language: BriefLanguage;
+      sourceTypes: BriefSourceType[];
+    }
+  >({
+    mutationFn: ({ projectId, ...body }) => briefApi.save(projectId, body),
+    onSuccess: (_d, vars) => {
+      toast.success(t("brief.saved"));
+      qc.invalidateQueries({ queryKey: ["brief", vars.projectId] });
+    },
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+export function useUploadAttachment() {
+  const qc = useQueryClient();
+  const message = useApiErrorMessage();
+  const { t } = useI18n();
+  return useMutation<
+    { attachment: BriefAttachmentDTO },
+    unknown,
+    {
+      projectId: string;
+      file: { name: string; mime: string; size: number; dataUrl: string };
+    }
+  >({
+    mutationFn: ({ projectId, file }) => briefApi.uploadAttachment(projectId, file),
+    onSuccess: (_d, vars) => {
+      toast.success(t("brief.uploaded"));
+      qc.invalidateQueries({ queryKey: ["brief", vars.projectId] });
+    },
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+export function useDeleteAttachment() {
+  const qc = useQueryClient();
+  const message = useApiErrorMessage();
+  const { t } = useI18n();
+  return useMutation<
+    { ok: boolean },
+    unknown,
+    { projectId: string; attachmentId: string }
+  >({
+    mutationFn: ({ projectId, attachmentId }) =>
+      briefApi.deleteAttachment(projectId, attachmentId),
+    onSuccess: (_d, vars) => {
+      toast.success(t("brief.attachmentDeleted"));
+      qc.invalidateQueries({ queryKey: ["brief", vars.projectId] });
+    },
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+export function useTranscribe() {
+  const message = useApiErrorMessage();
+  return useMutation<{ transcript: string }, unknown, { file: Blob; filename: string }>({
+    mutationFn: ({ file, filename }) => transcribeApi.transcribe(file, filename),
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+// ─────────────── AI plan drafts (Phase A3) ───────────────
+
+export function useAIDrafts(projectId: string | null) {
+  return useQuery<{ drafts: AIDraftSummaryDTO[] }>({
+    queryKey: ["ai-drafts", projectId ?? "none"],
+    queryFn: () => aiDraftsApi.list(projectId as string),
+    enabled: !!projectId,
+    staleTime: 5_000,
+  });
+}
+
+export function useAIDraft(draftId: string | null) {
+  return useQuery<{ draft: AIDraftDTO }>({
+    queryKey: ["ai-draft", draftId ?? "none"],
+    queryFn: () => aiDraftsApi.get(draftId as string),
+    enabled: !!draftId,
+    staleTime: 60_000,
+  });
+}
+
+/** Invalidate every view created tasks/drafts affect. */
+function invalidatePlanDependents(qc: ReturnType<typeof useQueryClient>, projectId: string) {
+  qc.invalidateQueries({ queryKey: ["ai-drafts", projectId] });
+  qc.invalidateQueries({ queryKey: ["ai-draft"] });
+  qc.invalidateQueries({ queryKey: ["tasks"] });
+  qc.invalidateQueries({ queryKey: ["projects"] });
+  qc.invalidateQueries({ queryKey: qk.stats });
+}
+
+export function useAnalyzeBrief() {
+  const qc = useQueryClient();
+  const message = useApiErrorMessage();
+  return useMutation<
+    { draft: AIDraftDTO; warning?: string },
+    unknown,
+    { projectId: string; language: "en" | "ar" }
+  >({
+    mutationFn: ({ projectId, language }) => aiDraftsApi.analyze(projectId, language),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["ai-drafts", vars.projectId] });
+    },
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+export function useSaveAIDraft() {
+  const qc = useQueryClient();
+  const message = useApiErrorMessage();
+  return useMutation<
+    { draft: AIDraftDTO },
+    unknown,
+    { draftId: string; payload: AIPlan; projectId: string }
+  >({
+    mutationFn: ({ draftId, payload }) => aiDraftsApi.save(draftId, payload),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["ai-draft", vars.draftId] });
+    },
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+export function useApproveAIDraft() {
+  const qc = useQueryClient();
+  const message = useApiErrorMessage();
+  const { t } = useI18n();
+  return useMutation<
+    { created: number; draft: AIDraftDTO },
+    unknown,
+    { draftId: string; projectId: string; acceptedTaskIds: string[] }
+  >({
+    mutationFn: ({ draftId, acceptedTaskIds }) =>
+      aiDraftsApi.approve(draftId, acceptedTaskIds),
+    onSuccess: (res, vars) => {
+      toast.success(t("ai.plan.approved", { n: res.created }));
+      invalidatePlanDependents(qc, vars.projectId);
+    },
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+export function useRegenerateModule() {
+  const qc = useQueryClient();
+  const message = useApiErrorMessage();
+  return useMutation<
+    { draft: AIDraftDTO },
+    unknown,
+    { draftId: string; moduleIndex: number }
+  >({
+    mutationFn: ({ draftId, moduleIndex }) =>
+      aiDraftsApi.regenerateModule(draftId, moduleIndex),
+    onSuccess: (res, vars) => {
+      qc.setQueryData(["ai-draft", vars.draftId], { draft: res.draft });
+    },
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+export function useDiscardAIDraft() {
+  const qc = useQueryClient();
+  const message = useApiErrorMessage();
+  return useMutation<
+    { draft: AIDraftDTO },
+    unknown,
+    { draftId: string; projectId: string }
+  >({
+    mutationFn: ({ draftId }) => aiDraftsApi.discard(draftId),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["ai-drafts", vars.projectId] });
+    },
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+// ───────────── Assistant & reports (Phase A6) ─────────────
+
+export function useAssistantAsk() {
+  const qc = useQueryClient();
+  const message = useApiErrorMessage();
+  return useMutation<
+    { conversationId: string; answer: string; createdAt: string },
+    unknown,
+    { projectId: string; question: string; conversationId?: string; language?: "en" | "ar" }
+  >({
+    mutationFn: ({ projectId, question, conversationId, language }) =>
+      assistantApi.ask(projectId, { question, conversationId, language }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["assistant-conversations"] });
+    },
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+export function useAssistantConversations(projectId: string | null) {
+  return useQuery<{
+    conversations: {
+      id: string;
+      title: string;
+      language: string;
+      messageCount: number;
+      updatedAt: string;
+    }[];
+  }>({
+    queryKey: ["assistant-conversations", projectId ?? "none"],
+    queryFn: () => assistantApi.listConversations(projectId as string),
+    enabled: !!projectId,
+    staleTime: 5_000,
+  });
+}
+
+export function useAssistantConversation(conversationId: string | null) {
+  return useQuery<{
+    conversation: { id: string; title: string; language: string; projectId: string | null };
+    messages: { id: string; role: "USER" | "ASSISTANT"; content: string; createdAt: string }[];
+  }>({
+    queryKey: ["assistant-conversation", conversationId ?? "none"],
+    queryFn: () => assistantApi.getConversation(conversationId as string),
+    enabled: !!conversationId,
+  });
+}
+
+export function useDeleteAssistantConversation() {
+  const qc = useQueryClient();
+  const message = useApiErrorMessage();
+  return useMutation<{ ok: boolean }, unknown, { conversationId: string; projectId: string }>({
+    mutationFn: ({ conversationId }) => assistantApi.deleteConversation(conversationId),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["assistant-conversations", vars.projectId] });
+    },
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+export function useAiTaskSplit() {
+  const message = useApiErrorMessage();
+  return useMutation<
+    { proposals: { title: string }[] },
+    unknown,
+    { taskId: string; language?: "en" | "ar" }
+  >({
+    mutationFn: ({ taskId, language }) => aiTaskApi.split(taskId, language),
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+export function useGenerateReport() {
+  const qc = useQueryClient();
+  const message = useApiErrorMessage();
+  const { t } = useI18n();
+  return useMutation<
+    { document: { id: string; number: string; title: string; versionNo: number } },
+    unknown,
+    { projectId: string; type: "PROGRESS_REPORT" | "COMPLETION_REPORT"; language: "en" | "ar" }
+  >({
+    mutationFn: ({ projectId, type, language }) =>
+      reportsApi.generate(projectId, type, language),
+    onSuccess: (res) => {
+      toast.success(t("reports.generated", { number: res.document.number }));
+      qc.invalidateQueries({ queryKey: ["documents"] });
+    },
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+// ───────────── Scope of Work AI (Phase A5) ─────────────
+
+export function useGenerateSow() {
+  const qc = useQueryClient();
+  const message = useApiErrorMessage();
+  const { t } = useI18n();
+  return useMutation<
+    { document: { id: string; number: string; title: string; versionNo: number } },
+    unknown,
+    { projectId: string; language: "en" | "ar" }
+  >({
+    mutationFn: ({ projectId, language }) => sowApi.generate(projectId, language),
+    onSuccess: (res) => {
+      toast.success(t("sow.generated", { number: res.document.number }));
+      qc.invalidateQueries({ queryKey: ["documents"] });
+    },
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+// ───────────── Dependencies & timeline (Phase A4) ─────────────
+
+export function useSetDependencies() {
+  const qc = useQueryClient();
+  const message = useApiErrorMessage();
+  return useMutation<
+    { dependsOn: string[] },
+    unknown,
+    { taskId: string; dependsOnIds: string[] }
+  >({
+    mutationFn: ({ taskId, dependsOnIds }) =>
+      tasksApiExtra.setDependencies(taskId, dependsOnIds),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+    },
+    onError: (e) => toast.error(message(e)),
+  });
+}
+
+export function useTimelineCompute() {
+  const qc = useQueryClient();
+  const message = useApiErrorMessage();
+  return useMutation<
+    Awaited<ReturnType<typeof timelineApi.compute>>,
+    unknown,
+    { projectId: string; body: TimelineComputeInput }
+  >({
+    mutationFn: ({ projectId, body }) => timelineApi.compute(projectId, body),
+    onSuccess: (res) => {
+      if (res.applied > 0) {
+        qc.invalidateQueries({ queryKey: ["tasks"] });
+        qc.invalidateQueries({ queryKey: ["projects"] });
+        qc.invalidateQueries({ queryKey: ["stats"] });
+      }
     },
     onError: (e) => toast.error(message(e)),
   });

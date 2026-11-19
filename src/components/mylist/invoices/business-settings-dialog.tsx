@@ -26,6 +26,8 @@ import {
   useUpdateBusinessSettings,
 } from "@/hooks/use-mylist";
 import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+import type { TranslationKey } from "@/lib/i18n/en";
 import { CURRENCIES, DEFAULT_CURRENCY } from "@/lib/types";
 
 const MAX_LOGO_BYTES = 300 * 1024; // 300 KB raw file → ~400 KB as data URL
@@ -59,6 +61,12 @@ export function BusinessSettingsDialog({
   const [logoName, setLogoName] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
   const [saving, setSaving] = useState(false);
+  // ── Scheduling (Phase A4) ──
+  const [workingDays, setWorkingDays] = useState<number[]>([0, 1, 2, 3, 4]);
+  const [workingHoursPerDay, setWorkingHoursPerDay] = useState(8);
+  const [holidaysText, setHolidaysText] = useState("");
+  const [defaultTaskDurationDays, setDefaultTaskDurationDays] = useState(1);
+  const [autoScheduleNewTasks, setAutoScheduleNewTasks] = useState(true);
 
   useEffect(() => {
     if (open && data?.settings) {
@@ -75,6 +83,20 @@ export function BusinessSettingsDialog({
       setLogoName(s.logoName);
       setLogoError(false);
       setSaving(false);
+      // Scheduling (Phase A4)
+      try {
+        const wd: unknown = JSON.parse(s.workingDays);
+        if (Array.isArray(wd) && wd.length > 0) {
+          setWorkingDays(wd.filter((n) => typeof n === "number" && n >= 0 && n <= 6));
+        }
+      } catch { /* defaults stay */ }
+      try {
+        const h: unknown = JSON.parse(s.holidays);
+        if (Array.isArray(h)) setHolidaysText(h.join(", "));
+      } catch { /* defaults stay */ }
+      setWorkingHoursPerDay(s.workingHoursPerDay);
+      setDefaultTaskDurationDays(s.defaultTaskDurationDays);
+      setAutoScheduleNewTasks(s.autoScheduleNewTasks);
     }
   }, [open, data]);
 
@@ -108,6 +130,16 @@ export function BusinessSettingsDialog({
         paymentInstructions: paymentInstructions.trim(),
         logoData,
         logoName,
+        workingDays: JSON.stringify(workingDays),
+        workingHoursPerDay,
+        holidays: JSON.stringify(
+          holidaysText
+            .split(",")
+            .map((x) => x.trim())
+            .filter(Boolean),
+        ),
+        defaultTaskDurationDays,
+        autoScheduleNewTasks,
       });
       onOpenChange(false);
     } catch {
@@ -130,7 +162,6 @@ export function BusinessSettingsDialog({
           <div className="flex items-center gap-4">
             <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
               {logoData ? (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img src={logoData} alt="Logo" className="size-full object-cover" />
               ) : (
                 <ImageUp className="size-6 text-slate-300" />
@@ -270,6 +301,105 @@ export function BusinessSettingsDialog({
                 rows={2}
                 placeholder={t("businessSettings.invoiceFooterPlaceholder")}
               />
+            </div>
+
+            {/* ── Scheduling (Phase A4) ── */}
+            <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3 sm:col-span-2">
+              <div>
+                <p className="text-sm font-semibold text-slate-700">
+                  {t("sched.schedulingSection")}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {t("sched.schedulingSectionDesc")}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("sched.workingDaysLabel")}</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[0, 1, 2, 3, 4, 5, 6].map((d) => {
+                    const active = workingDays.includes(d);
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() =>
+                          setWorkingDays((cur) => {
+                            if (cur.includes(d)) {
+                              const next = cur.filter((x) => x !== d);
+                              return next.length > 0 ? next : cur;
+                            }
+                            return [...cur, d].sort();
+                          })
+                        }
+                        className={cn(
+                          "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                          active
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-slate-200 bg-white text-slate-400 hover:bg-slate-100",
+                        )}
+                      >
+                        {t(`sched.day${d}` as TranslationKey)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-slate-400">{t("sched.weekendNote")}</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="bs-hours">{t("sched.workingHoursPerDay")}</Label>
+                  <Input
+                    id="bs-hours"
+                    type="number"
+                    dir="ltr"
+                    min={1}
+                    max={24}
+                    step={0.5}
+                    value={workingHoursPerDay}
+                    onChange={(e) =>
+                      setWorkingHoursPerDay(
+                        Math.max(1, Math.min(24, Number(e.target.value) || 8)),
+                      )
+                    }
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="bs-duration">{t("sched.defaultDuration")}</Label>
+                  <Input
+                    id="bs-duration"
+                    type="number"
+                    dir="ltr"
+                    min={0}
+                    max={365}
+                    step={0.5}
+                    value={defaultTaskDurationDays}
+                    onChange={(e) =>
+                      setDefaultTaskDurationDays(
+                        Math.max(0, Math.min(365, Number(e.target.value) || 1)),
+                      )
+                    }
+                  />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="bs-holidays">{t("sched.holidays")}</Label>
+                  <Input
+                    id="bs-holidays"
+                    dir="ltr"
+                    value={holidaysText}
+                    onChange={(e) => setHolidaysText(e.target.value)}
+                    placeholder={t("sched.holidaysHint")}
+                  />
+                </div>
+              </div>
+              <label className="flex cursor-pointer items-center justify-between gap-3 text-sm text-slate-600">
+                {t("sched.autoSchedule")}
+                <input
+                  type="checkbox"
+                  checked={autoScheduleNewTasks}
+                  onChange={(e) => setAutoScheduleNewTasks(e.target.checked)}
+                  className="size-4"
+                />
+              </label>
             </div>
           </div>
         </div>

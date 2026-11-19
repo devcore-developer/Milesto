@@ -72,6 +72,9 @@ import {
 } from "@/components/mylist/project/badges";
 import { InvoiceStatusBadge } from "@/components/mylist/finance/invoice-badge";
 import { ProjectDialog } from "@/components/mylist/project/project-dialog";
+import { BriefSection } from "@/components/mylist/brief/brief-section";
+import { AIPlanSection } from "@/components/mylist/ai/ai-plan-review";
+import { ProjectAssistant } from "@/components/mylist/ai/project-assistant";
 
 function DateInfo({ label, iso }: { label: string; iso: string | null }) {
   const { lang } = useI18n();
@@ -444,6 +447,15 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Project brief (Phase A2) — source of truth for AI planning */}
+      <BriefSection projectId={project.id} />
+
+      {/* AI plan review (Phase A3) — analyze → review → approve */}
+      <AIPlanSection projectId={project.id} />
+
+      {/* Project assistant (Phase A6) — grounded Q&A, persisted threads */}
+      <ProjectAssistant projectId={project.id} />
 
       {/* Task checklist */}
       <Card>

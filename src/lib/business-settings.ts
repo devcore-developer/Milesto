@@ -17,6 +17,12 @@ export interface BusinessSettingsRow {
   paymentInstructions: string | null;
   logoData: string | null;
   logoName: string | null;
+  // ── Scheduling engine (Phase A4) ──
+  workingDays: string;
+  workingHoursPerDay: number;
+  holidays: string;
+  defaultTaskDurationDays: number;
+  autoScheduleNewTasks: boolean;
 }
 
 /**
@@ -50,5 +56,10 @@ export function serializeBusinessSettings(
     paymentInstructions: row.paymentInstructions,
     logoData: row.logoData,
     logoName: row.logoName,
+    workingDays: row.workingDays,
+    workingHoursPerDay: row.workingHoursPerDay,
+    holidays: row.holidays,
+    defaultTaskDurationDays: row.defaultTaskDurationDays,
+    autoScheduleNewTasks: row.autoScheduleNewTasks,
   };
 }

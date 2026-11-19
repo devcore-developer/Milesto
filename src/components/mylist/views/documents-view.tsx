@@ -217,6 +217,11 @@ export function DocumentsView() {
                   >
                     <TableCell dir="ltr" className="font-medium tabular-nums text-slate-500">
                       {doc.number}
+                      {doc.versionNo > 1 && (
+                        <span className="ms-1 rounded bg-primary/10 px-1 py-0.5 text-[10px] font-semibold text-primary">
+                          v{doc.versionNo}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex min-w-0 flex-col gap-1">
@@ -263,6 +268,11 @@ export function DocumentsView() {
                     <p className="truncate font-semibold text-slate-900">{doc.title}</p>
                     <p className="text-xs tabular-nums text-slate-400" dir="ltr">
                       {doc.number} · {formatDate(doc.issueDate, lang)}
+                      {doc.versionNo > 1 && (
+                        <span className="ms-1 rounded bg-primary/10 px-1 py-0.5 text-[10px] font-semibold text-primary">
+                          v{doc.versionNo}
+                        </span>
+                      )}
                     </p>
                     <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                       <DocTypeBadge type={doc.type} />

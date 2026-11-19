@@ -1,4 +1,5 @@
 // Shared domain types & wire DTOs (JSON-serialized shapes, dates as ISO strings)
+import type { AIPlan } from "@/lib/ai/plan-schema";
 
 export const TASK_STATUSES = ["TODO", "IN_PROGRESS", "COMPLETED"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
@@ -110,6 +111,11 @@ export interface DocumentRecordDTO {
   client: DocumentClientInfo | null;
   project: { id: string; name: string } | null;
   content: DocumentContent;
+  // ── AI versioning (Phase A5) ──
+  versionNo: number;
+  previousVersionId: string | null;
+  /** JSON traceability map { [sectionId]: sourceQuotes[] } — null for manual docs. */
+  aiTrace: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -170,8 +176,13 @@ export interface TaskDTO {
   dueDate: string | null;
   completedAt: string | null;
   order: number;
+  // Zero-duration marker (Phase A4 timeline) — behaves like a task everywhere.
+  isMilestone: boolean;
   categoryId: string | null;
   projectId: string | null;
+  // Finish-to-start dependencies (Phase A4): ids of tasks that must
+  // finish before this one can start.
+  dependsOn: string[];
   category: { id: string; name: string; color: string } | null;
   project?: { id: string; name: string } | null;
   subtasks: SubtaskDTO[];
@@ -271,6 +282,14 @@ export interface BusinessSettingsDTO {
   /** Logo as a data URL (data:image/…;base64,…) */
   logoData: string | null;
   logoName: string | null;
+  // ── Scheduling engine (Phase A4) — weekends DERIVED as the complement ──
+  /** JSON weekday array 0=Sunday, e.g. "[0,1,2,3,4]" (Sun–Thu default). */
+  workingDays: string;
+  workingHoursPerDay: number;
+  /** JSON array of "YYYY-MM-DD" (fixed) / "MM-DD" (yearly recurring). */
+  holidays: string;
+  defaultTaskDurationDays: number;
+  autoScheduleNewTasks: boolean;
 }
 
 export interface InvoiceDTO {
@@ -356,4 +375,77 @@ export interface AuthState {
   needsSetup: boolean;
   authed: boolean;
   user: AuthUser | null;
+}
+
+// ───────────── Project Brief (Phase A2) ─────────────
+
+export type BriefLanguage = "en" | "ar" | "mixed";
+export type BriefSourceType = "text" | "voice" | "files";
+export type BriefAttachmentStatus =
+  | "READY"
+  | "EXTRACTED"
+  | "ANALYZED"
+  | "UNSUPPORTED"
+  | "FAILED";
+
+export interface BriefAttachmentDTO {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  processingStatus: BriefAttachmentStatus;
+  extractedText: string | null;
+  visionSummary: string | null;
+  createdAt: string;
+}
+
+export interface BriefVersionDTO {
+  id: string;
+  versionNo: number;
+  // The working text exactly as typed — never AI-rewritten.
+  content: string;
+  // Raw ASR transcript kept untouched beside the edited text.
+  transcript: string | null;
+  language: BriefLanguage;
+  sourceTypes: BriefSourceType[];
+  attachments: BriefAttachmentDTO[];
+  createdAt: string;
+}
+
+export interface BriefVersionSummaryDTO {
+  id: string;
+  versionNo: number;
+  createdAt: string;
+  attachmentCount: number;
+  contentPreview: string;
+}
+
+export interface BriefDTO {
+  projectId: string;
+  latest: BriefVersionDTO | null;
+  versions: BriefVersionSummaryDTO[];
+}
+
+// ───────────── AI plan drafts (Phase A3) ─────────────
+
+export type AIDraftStatus = "DRAFT" | "APPROVED" | "DISCARDED";
+
+export interface AIDraftSummaryDTO {
+  id: string;
+  status: AIDraftStatus;
+  language: string;
+  moduleCount: number;
+  taskCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AIDraftDTO extends AIDraftSummaryDTO {
+  projectId: string;
+  briefVersionId: string | null;
+  provider: string | null;
+  model: string | null;
+  payload: AIPlan;
+  createdAt: string;
+  updatedAt: string;
 }

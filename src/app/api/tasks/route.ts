@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getSessionUser, unauthorized } from "@/lib/auth";
 import { taskCreateSchema, validationError, zodIssues } from "@/lib/validation";
 import { TASK_STATUSES, TASK_PRIORITIES } from "@/lib/types";
+import { taskDependsOnIds } from "@/lib/project-utils";
 
 // GET /api/tasks — list tasks with optional filters
 export async function GET(req: NextRequest) {
@@ -36,16 +37,23 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    const tasks = await db.task.findMany({
+    const rows = await db.task.findMany({
       where,
       include: {
         subtasks: { orderBy: [{ order: "asc" }, { createdAt: "asc" }] },
         category: { select: { id: true, name: true, color: true } },
         project: { select: { id: true, name: true } },
+        blockingDependencies: { select: { dependsOnId: true } },
       },
       orderBy: [{ order: "asc" }, { createdAt: "desc" }],
       take: 1000,
     });
+
+    const tasks = rows.map((t) => ({
+      ...t,
+      dependsOn: taskDependsOnIds(t),
+      blockingDependencies: undefined,
+    }));
 
     return NextResponse.json({ tasks });
   } catch (e) {
@@ -94,6 +102,7 @@ export async function POST(req: NextRequest) {
         dueDate: d.dueDate ? new Date(d.dueDate) : null,
         categoryId: d.categoryId ?? null,
         projectId: d.projectId ?? null,
+        isMilestone: d.isMilestone ?? false,
         completedAt: d.status === "COMPLETED" ? new Date() : null,
         userId: user.id,
         subtasks: d.subtasks?.length
@@ -106,10 +115,14 @@ export async function POST(req: NextRequest) {
         subtasks: { orderBy: [{ order: "asc" }, { createdAt: "asc" }] },
         category: { select: { id: true, name: true, color: true } },
         project: { select: { id: true, name: true } },
+        blockingDependencies: { select: { dependsOnId: true } },
       },
     });
 
-    return NextResponse.json({ task }, { status: 201 });
+    return NextResponse.json(
+      { task: { ...task, dependsOn: taskDependsOnIds(task), blockingDependencies: undefined } },
+      { status: 201 },
+    );
   } catch (e) {
     console.error("[tasks POST]", e);
     return NextResponse.json({ error: "SERVER_ERROR" }, { status: 500 });

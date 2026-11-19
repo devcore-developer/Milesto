@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { getSessionUser, unauthorized } from "@/lib/auth";
 import { projectUpdateSchema, validationError, zodIssues } from "@/lib/validation";
 import type { ProjectDetailDTO, ProjectStatus, TaskDTO } from "@/lib/types";
-import { calendarDaysUntil, isProjectOverdue, projectProgress, serializeProject } from "@/lib/project-utils";
+import { calendarDaysUntil, isProjectOverdue, projectProgress, serializeProject, taskDependsOnIds } from "@/lib/project-utils";
 import { serializeInvoice } from "@/lib/serializers";
 import { projectFinancialSummary } from "@/lib/serializers";
 
@@ -20,9 +20,11 @@ function toTaskDTO(task: {
   dueDate: Date | null;
   completedAt: Date | null;
   order: number;
+  isMilestone: boolean;
   categoryId: string | null;
   projectId: string | null;
   category: { id: string; name: string; color: string } | null;
+  blockingDependencies?: { dependsOnId: string }[] | null;
   subtasks: {
     id: string;
     taskId: string;
@@ -42,6 +44,8 @@ function toTaskDTO(task: {
     startDate: task.startDate?.toISOString() ?? null,
     dueDate: task.dueDate?.toISOString() ?? null,
     completedAt: task.completedAt?.toISOString() ?? null,
+    isMilestone: task.isMilestone,
+    dependsOn: taskDependsOnIds(task),
     subtasks: task.subtasks.map((s) => ({
       ...s,
       createdAt: s.createdAt.toISOString(),
@@ -67,7 +71,7 @@ export async function GET(req: NextRequest, { params }: Params) {
         invoices: {
           include: {
             payments: { orderBy: { paidAt: "desc" } },
-            client: { select: { id: true, name: true, company: true } },
+            client: { select: { id: true, name: true, company: true, email: true, phone: true, address: true } },
             project: { select: { id: true, name: true } },
           },
           orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
@@ -77,6 +81,7 @@ export async function GET(req: NextRequest, { params }: Params) {
           include: {
             subtasks: { orderBy: [{ order: "asc" }, { createdAt: "asc" }] },
             category: { select: { id: true, name: true, color: true } },
+            blockingDependencies: { select: { dependsOnId: true } },
           },
         },
       },

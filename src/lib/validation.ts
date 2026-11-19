@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { aiPlanSchema } from "@/lib/ai/plan-schema";
 import {
   CLIENT_STATUSES,
   DISCOUNT_TYPES,
@@ -31,7 +32,7 @@ export const loginSchema = z.object({
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
-  newPassword: z.string().min(8, "Password must be at least 8 characters").max(128),
+  newPassword: z.string().min(8, "New password must be at least 8 characters").max(128),
 });
 
 export const profileSchema = z.object({
@@ -49,6 +50,7 @@ export const taskCreateSchema = z.object({
   dueDate: dateString.nullable().optional(),
   categoryId: z.string().min(1).nullable().optional(),
   projectId: z.string().min(1).nullable().optional(),
+  isMilestone: z.boolean().optional(),
   subtasks: z
     .array(z.object({ title: z.string().trim().min(1).max(200) }))
     .max(50)
@@ -188,7 +190,7 @@ export const invoiceCreateSchema = z.object({
 
 export const invoiceUpdateSchema = invoiceCreateSchema.partial();
 
-// ───────────── Business / invoice settings (Phase 5) ─────────────
+// ───────────── Business / invoice settings (Phase 5) ─────────────────────
 
 export const businessSettingsUpdateSchema = z.object({
   businessName: z.string().trim().min(1, "Business name is required").max(120).optional(),
@@ -203,6 +205,45 @@ export const businessSettingsUpdateSchema = z.object({
   currency: currencyCode.nullable().optional(),
   invoiceFooter: optionalText(500),
   paymentInstructions: optionalText(2_000),
+  // ── Scheduling engine (Phase A4) ──
+  /** JSON weekday array 0=Sunday, e.g. "[0,1,2,3,4]" (Sun–Thu). */
+  workingDays: z
+    .string()
+    .refine((v) => {
+      try {
+        const arr: unknown = JSON.parse(v);
+        return (
+          Array.isArray(arr) &&
+          arr.length > 0 &&
+          arr.every((n) => typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= 6)
+        );
+      } catch {
+        return false;
+      }
+    }, "Invalid working days")
+    .optional(),
+  workingHoursPerDay: z.number().min(1).max(24).optional(),
+  /** JSON array of "YYYY-MM-DD" (fixed) or "MM-DD" (yearly recurring). */
+  holidays: z
+    .string()
+    .refine((v) => {
+      try {
+        const arr: unknown = JSON.parse(v);
+        return (
+          Array.isArray(arr) &&
+          arr.every(
+            (s) =>
+              typeof s === "string" &&
+              (/^\d{4}-\d{2}-\d{2}$/.test(s) || /^\d{2}-\d{2}$/.test(s)),
+          )
+        );
+      } catch {
+        return false;
+      }
+    }, "Invalid holidays")
+    .optional(),
+  defaultTaskDurationDays: z.number().min(0).max(365).optional(),
+  autoScheduleNewTasks: z.boolean().optional(),
   /** Logo as a data URL — empty string clears it. */
   logoData: z
     .string()
@@ -282,6 +323,100 @@ export const documentCreateSchema = z.object({
 });
 
 export const documentUpdateSchema = documentCreateSchema.partial();
+
+// ───────────────────── Brief (Phase A2) ─────────────────────
+
+export const BRIEF_LANGUAGES = ["en", "ar", "mixed"] as const;
+export const BRIEF_SOURCE_TYPES = ["text", "voice", "files"] as const;
+
+export const briefSaveSchema = z.object({
+  // Working text exactly as typed — the AI never rewrites it.
+  content: z.string().max(200_000).default(""),
+  transcript: z.string().max(200_000).nullable().optional(),
+  language: z.enum(BRIEF_LANGUAGES).default("en"),
+  sourceTypes: z.array(z.enum(BRIEF_SOURCE_TYPES)).default([]),
+});
+
+export const briefAttachmentSchema = z.object({
+  name: z.string().trim().min(1, "File name is required").max(200),
+  mime: z.string().trim().min(1).max(100),
+  // Raw binary size in bytes — cross-checked against sniffed type caps.
+  size: z.number().int().min(1).max(14 * 1024 * 1024),
+  // data:…;base64,… — logoData pattern. ~14 MB of base64 ≈ 10 MB binary.
+  dataUrl: z.string().min(10).max(20 * 1024 * 1024),
+});
+
+// ───────────────────── AI plan drafts (Phase A3) ─────────────────────
+
+export const aiAnalyzeSchema = z.object({
+  // Output language, independent of the brief's input language.
+  language: z.enum(["en", "ar"]).default("en"),
+});
+
+export const draftApproveSchema = z.object({
+  // Task refs the reviewer accepted — empty/omitted = all of them.
+  acceptedTaskIds: z.array(z.string().max(40)).max(200).default([]),
+});
+
+export const draftRegenerateSchema = z.object({
+  moduleIndex: z.number().int().min(0).max(49),
+});
+
+export const draftUpdateSchema = z.object({
+  payload: aiPlanSchema.optional(),
+  status: z.enum(["DISCARDED"]).optional(),
+});
+
+// ───────────── Dependencies & timeline (Phase A4) ─────────────
+
+export const taskDependenciesSchema = z.object({
+  // Tasks that must FINISH before this one can start. Self-links and
+  // unknown ids are rejected server-side; cycles are topologically checked.
+  dependsOnIds: z.array(z.string().min(1).max(64)).max(100),
+});
+
+export const timelineComputeSchema = z.object({
+  mode: z.enum(["forward", "backward"]).default("forward"),
+  /** Apply the computed dates to tasks (preview-only when false). */
+  apply: z.boolean().default(false),
+  startDate: dateString.optional(),
+  deadline: dateString.nullable().optional(),
+  /** Also overwrite tasks that already carry dates (explicit opt-in —
+   *  manually approved dates are never silently replaced). */
+  overwriteAll: z.boolean().default(false),
+});
+
+// ───────────── Scope of Work AI (Phase A5) ─────────────
+
+export const sowGenerateSchema = z.object({
+  language: z.enum(["en", "ar"]).default("en"),
+});
+
+// ───────────── Assistant & reports (Phase A6) ─────────────
+
+export const assistantAskSchema = z.object({
+  question: z.string().trim().min(1, "Question is required").max(4_000),
+  conversationId: z.string().min(1).max(64).optional(),
+  language: z.enum(["en", "ar"]).default("en"),
+});
+
+export const conversationCreateSchema = z.object({
+  title: z.string().trim().min(1).max(120).default("New conversation"),
+  language: z.enum(["en", "ar"]).default("en"),
+});
+
+export const conversationUpdateSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+});
+
+export const taskSplitSchema = z.object({
+  language: z.enum(["en", "ar"]).default("en"),
+});
+
+export const reportGenerateSchema = z.object({
+  type: z.enum(["PROGRESS_REPORT", "COMPLETION_REPORT"]),
+  language: z.enum(["en", "ar"]).default("en"),
+});
 
 /** Uniform 400 response body for failed validation */
 export function validationError(issues: { path: string; message: string }[]) {
